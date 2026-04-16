@@ -1,0 +1,15 @@
+name: kokoro-onnx
+
+services:
+  kokoro-onnx:
+    build:
+      context: .
+      args:
+        BASE_IMAGE: python:3.12-slim
+        TARGET: cpu
+    container_name: kokoro-onnx
+    ports:
+      - "5023:5023"
+    env_file:
+      - .env
+    restart: unless-stopped

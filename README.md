@@ -126,7 +126,7 @@ curl http://localhost:5023/v1/voices
 
 ## Japanese TTS
 
-Japanese voices (`jf_*` / `jm_*`) use the misaki-fork[ja] G2P with the unidic dictionary for phoneme generation. Requires the unidic dictionary (~775MB), which is automatically downloaded on first use and persisted via Docker volume.
+Japanese voices (`jf_*` / `jm_*`) use the primary model with misaki-fork[ja] G2P for text-to-phoneme conversion. The unidic dictionary (~775MB) is automatically downloaded on first use and persisted via Docker volume. Long text is split at sentence boundaries to reduce VRAM usage.
 
 ```bash
 curl -X POST http://localhost:5023/v1/audio/speech \
@@ -230,6 +230,8 @@ With these settings, VRAM stabilizes within the same language after repeated gen
 | Switching between languages | up to ~4 GB |
 
 Short text generation stays near baseline with minimal VRAM increase.
+
+Japanese uses G2P (text → phonemes → audio) with the primary model, while Chinese uses a separate model. Japanese phoneme sequences are longer than raw text, resulting in higher per-second VRAM usage compared to English and Chinese.
 
 > **Note:** VRAM values are for reference only and may vary by GPU, driver, and input content.
 

@@ -105,12 +105,32 @@ async def lifespan(app: FastAPI):
     # Load Japanese G2P (misaki-fork[ja])
     try:
         import os
+        import shutil
+        import tempfile
         from unidic import DICDIR
         from misaki import ja
         if not os.path.isfile(os.path.join(DICDIR, "sys.dic")):
             logger.info("UniDic not found, downloading...")
-            from unidic.download import download_version
-            download_version()
+            import urllib.request
+            url = "https://cotonoha-dic.s3-ap-northeast-1.amazonaws.com/unidic-3.1.0.zip"
+            zip_path = os.path.join(tempfile.gettempdir(), "unidic.zip")
+            tmp_dir = os.path.join(tempfile.gettempdir(), "unidic_tmp")
+            urllib.request.urlretrieve(url, zip_path)
+            import zipfile
+            with zipfile.ZipFile(zip_path) as zf:
+                zf.extractall(tmp_dir)
+            os.remove(zip_path)
+            # Copy extracted files into the (possibly mounted) dicdir
+            os.makedirs(DICDIR, exist_ok=True)
+            for item in os.listdir(tmp_dir):
+                src = os.path.join(tmp_dir, item)
+                dst = os.path.join(DICDIR, item)
+                if os.path.isdir(src):
+                    shutil.copytree(src, dst, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(src, dst)
+            shutil.rmtree(tmp_dir)
+            logger.info("UniDic dictionary downloaded and installed")
         ja_g2p_instance = ja.JAG2P()
         speech_router.set_ja_g2p(ja_g2p_instance)
         logger.info("Japanese G2P loaded")

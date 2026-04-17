@@ -12,6 +12,8 @@ services:
       - "5023:5023"
     env_file:
       - .env
+    volumes:
+      - ./data/unidic:/opt/venv/lib/python3.12/site-packages/unidic/dicdir
     restart: unless-stopped
     environment:
       - NVIDIA_VISIBLE_DEVICES=all

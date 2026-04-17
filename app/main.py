@@ -91,9 +91,13 @@ async def lifespan(app: FastAPI):
 
     # Load Japanese G2P (misaki-fork[ja])
     try:
-        from unidic.download import download_version
+        import os
+        from unidic import DICDIR
         from misaki import ja
-        download_version()  # downloads dict if missing
+        if not os.path.isfile(os.path.join(DICDIR, "sys.dic")):
+            logger.info("UniDic not found, downloading...")
+            from unidic.download import download_version
+            download_version()
         ja_g2p_instance = ja.JAG2P()
         speech_router.set_ja_g2p(ja_g2p_instance)
         logger.info("Japanese G2P loaded")

@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 import onnxruntime as rt
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from kokoro_onnx import Kokoro
 
 from app.config import settings
@@ -24,20 +25,26 @@ logger = logging.getLogger(__name__)
 kokoro_lock = asyncio.Lock()
 kokoro_instance: Kokoro | None = None
 
+# Chinese model (optional)
+zh_lock: asyncio.Lock | None = None
+zh_kokoro: Kokoro | None = None
+zh_g2p = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global kokoro_instance
+    global kokoro_instance, zh_kokoro, zh_g2p, zh_lock
+
+    # Load primary (English/multilingual) model
     logger.info(f"Loading model from {settings.MODEL_PATH}")
     t0 = time.time()
     providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
     session = rt.InferenceSession(settings.MODEL_PATH, providers=providers)
     logger.info(f"ONNX session providers: {session.get_providers()}")
-    kokoro_instance = Kokoro.from_session(session, settings.VOICES_PATH)
+    kokoro_instance = Kokoro.from_session(session, settings.VOICES_PATH, vocab_config="models/config.json")
     logger.info(f"Model loaded in {time.time() - t0:.1f}s, voices: {kokoro_instance.get_voices()}")
 
     speech_router.set_kokoro(kokoro_instance, kokoro_lock)
-    models_router.set_kokoro(kokoro_instance)
 
     # Warmup: trigger CUDA kernel compilation
     if "CUDAExecutionProvider" in session.get_providers():
@@ -48,9 +55,57 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("GPU not available, running in CPU mode")
 
+    # Load Chinese model (optional)
+    if settings.ZH_ENABLED:
+        try:
+            import os
+            if not os.path.exists(settings.ZH_MODEL_PATH):
+                logger.warning(f"Chinese model not found at {settings.ZH_MODEL_PATH}, skipping")
+            else:
+                from app.g2p import replace_english
+                from misaki import zh
+
+                logger.info(f"Loading Chinese model from {settings.ZH_MODEL_PATH}")
+                t2 = time.time()
+                zh_session = rt.InferenceSession(settings.ZH_MODEL_PATH, providers=providers)
+                zh_kokoro = Kokoro.from_session(zh_session, settings.ZH_VOICES_PATH, vocab_config=settings.ZH_VOCAB_CONFIG)
+                zh_g2p = zh.ZHG2P(version="1.1")
+                zh_lock = asyncio.Lock()
+                logger.info(f"Chinese model loaded in {time.time() - t2:.1f}s, voices: {zh_kokoro.get_voices()}")
+
+                # Warmup Chinese model
+                if "CUDAExecutionProvider" in zh_session.get_providers():
+                    logger.info("Warming up Chinese model GPU...")
+                    t3 = time.time()
+                    phonemes, _ = zh_g2p("测试")
+                    zh_kokoro.create(phonemes, voice="zf_001", speed=1.0, is_phonemes=True)
+                    logger.info(f"Chinese warmup done in {time.time() - t3:.1f}s")
+        except Exception as e:
+            logger.warning(f"Failed to load Chinese model: {e}")
+            zh_kokoro = None
+            zh_g2p = None
+
+    speech_router.set_zh_kokoro(zh_kokoro, zh_lock, zh_g2p)
+    models_router.set_kokoro(kokoro_instance)
+    models_router.set_zh_kokoro(zh_kokoro)
+
+    # Load Japanese G2P (misaki-fork[ja])
+    try:
+        from unidic.download import download_version
+        from misaki import ja
+        download_version()  # downloads dict if missing
+        ja_g2p_instance = ja.JAG2P()
+        speech_router.set_ja_g2p(ja_g2p_instance)
+        logger.info("Japanese G2P loaded")
+    except Exception as e:
+        logger.warning(f"Failed to load Japanese G2P: {e}")
+    models_router.set_zh_kokoro(zh_kokoro)
+
     yield
 
     kokoro_instance = None
+    zh_kokoro = None
+    zh_g2p = None
 
 
 app = FastAPI(
@@ -61,6 +116,11 @@ app = FastAPI(
 
 app.include_router(speech_router.router, prefix="/v1")
 app.include_router(models_router.router, prefix="/v1")
+
+import os
+_static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+if os.path.isdir(_static_dir):
+    app.mount("/demo", StaticFiles(directory=_static_dir, html=True), name="static")
 
 
 @app.exception_handler(Exception)

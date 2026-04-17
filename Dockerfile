@@ -7,7 +7,8 @@ RUN sed -i 's/archive.ubuntu.com/mirror.uwaterloo.ca\/ubuntu/g' /etc/apt/sources
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        python3.12 python3.12-venv python3-pip \
+        python3.12 python3.12-venv python3.12-dev \
+        cmake gcc g++ \
         ffmpeg libespeak-ng1 ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
@@ -15,11 +16,13 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 FROM base AS builder
 
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY pyproject.toml .
 RUN uv venv /opt/venv --python python3.12 && \
     . /opt/venv/bin/activate && \
-    uv pip install --no-cache . ; \
+    CMAKE_MAKE_PROGRAM=/usr/bin/gmake CC=/usr/bin/gcc CXX=/usr/bin/g++ uv pip install --no-cache . ; \
     if [ "$TARGET" = "gpu" ]; then \
         uv pip install --no-cache --force-reinstall onnxruntime-gpu; \
     fi
@@ -34,6 +37,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY app/ app/
 COPY models/ models/
 COPY voices/ voices/
+COPY static/ static/
 
 ENV PYTHONWARNINGS="ignore::SyntaxWarning"
 

@@ -40,14 +40,14 @@ def _pcm_to_pydub_segment(samples: np.ndarray, sample_rate: int) -> AudioSegment
 def pcm_to_mp3_bytes(samples: np.ndarray, sample_rate: int) -> bytes:
     segment = _pcm_to_pydub_segment(samples, sample_rate)
     buf = io.BytesIO()
-    segment.export(buf, format="mp3")
+    segment.export(buf, format="mp3", bitrate="128k")
     return buf.getvalue()
 
 
 def pcm_to_aac_bytes(samples: np.ndarray, sample_rate: int) -> bytes:
     segment = _pcm_to_pydub_segment(samples, sample_rate)
     buf = io.BytesIO()
-    segment.export(buf, format="adts")
+    segment.export(buf, format="adts", bitrate="128k")
     return buf.getvalue()
 
 

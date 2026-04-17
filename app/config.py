@@ -11,5 +11,11 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 5023
 
+    # Chinese model (optional, enables Chinese + mixed CN/EN support)
+    ZH_MODEL_PATH: str = "models/kokoro-v1.1-zh.onnx"
+    ZH_VOICES_PATH: str = "voices/voices-v1.1-zh.bin"
+    ZH_VOCAB_CONFIG: str = "models/config.json"
+    ZH_ENABLED: bool = True
+
 
 settings = Settings()

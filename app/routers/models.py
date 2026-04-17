@@ -49,19 +49,35 @@ def set_kokoro(instance):
     kokoro = instance
 
 
+# Chinese model references (set by main.py)
+zh_kokoro = None
+
+
+def set_zh_kokoro(instance):
+    global zh_kokoro
+    zh_kokoro = instance
+
+
 @router.get("/models", response_model=ModelListResponse)
 async def list_models(_auth: None = Depends(verify_api_key)):
-    return ModelListResponse(
-        object="list",
-        data=[
+    data = [
+        ModelObject(
+            id="kokoro",
+            object="model",
+            created=int(time.time()),
+            owned_by="kokoro-onnx",
+        )
+    ]
+    if zh_kokoro is not None:
+        data.append(
             ModelObject(
-                id="kokoro",
+                id="kokoro-zh",
                 object="model",
                 created=int(time.time()),
                 owned_by="kokoro-onnx",
             )
-        ],
-    )
+        )
+    return ModelListResponse(object="list", data=data)
 
 
 @router.get("/voices")
@@ -76,4 +92,12 @@ async def list_voices(_auth: None = Depends(verify_api_key)):
             "language": LANGUAGE_MAP.get(prefix, "unknown"),
             "description": VOICE_DESCRIPTIONS.get(prefix, "Unknown"),
         })
+    if zh_kokoro is not None:
+        for name in sorted(zh_kokoro.get_voices()):
+            prefix = name[:2]
+            voices.append({
+                "id": name,
+                "language": LANGUAGE_MAP.get(prefix, "unknown"),
+                "description": VOICE_DESCRIPTIONS.get(prefix, "Unknown"),
+            })
     return {"object": "list", "data": voices}

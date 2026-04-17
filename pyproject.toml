@@ -12,4 +12,8 @@ dependencies = [
     "uvicorn[standard]",
     "pydantic-settings",
     "python-dotenv",
+    "misaki-fork[zh]",
+    "misaki-fork[ja]",
+    "unidic",
+    "g2p_en",
 ]

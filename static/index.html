@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kokoro TTS Demo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; padding: 24px; }
+  .container { max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 24px; color: #f8fafc; }
+  label { display: block; font-size: 0.875rem; font-weight: 500; color: #94a3b8; margin-bottom: 6px; }
+  textarea { width: 100%; height: 100px; padding: 12px; border: 1px solid #334155; border-radius: 8px; background: #1e293b; color: #e2e8f0; font-size: 1rem; resize: vertical; outline: none; }
+  textarea:focus { border-color: #6366f1; }
+  select { width: 100%; padding: 10px 12px; border: 1px solid #334155; border-radius: 8px; background: #1e293b; color: #e2e8f0; font-size: 0.9rem; outline: none; cursor: pointer; }
+  select:focus { border-color: #6366f1; }
+  .row { display: flex; gap: 12px; margin-top: 16px; }
+  .row > div { flex: 1; }
+  .format-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .format-btn { padding: 6px 16px; border: 1px solid #334155; border-radius: 6px; background: #1e293b; color: #94a3b8; cursor: pointer; font-size: 0.85rem; transition: all 0.15s; }
+  .format-btn:hover { border-color: #6366f1; color: #e2e8f0; }
+  .format-btn.active { background: #6366f1; border-color: #6366f1; color: #fff; }
+  .speed-row { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+  .speed-row input[type="range"] { flex: 1; accent-color: #6366f1; }
+  .speed-val { font-size: 0.85rem; color: #94a3b8; min-width: 40px; }
+  .btn { margin-top: 20px; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+  .btn-primary { background: #6366f1; color: #fff; }
+  .btn-primary:hover { background: #4f46e5; }
+  .btn-primary:disabled { background: #475569; cursor: not-allowed; }
+  .status { margin-top: 12px; font-size: 0.85rem; color: #94a3b8; min-height: 20px; }
+  .status.error { color: #f87171; }
+  .audio-section { margin-top: 24px; }
+  .audio-item { display: flex; align-items: center; gap: 12px; padding: 10px; background: #1e293b; border-radius: 8px; margin-bottom: 8px; }
+  .audio-item audio { flex: 1; height: 36px; }
+  .audio-item .meta { font-size: 0.8rem; color: #64748b; min-width: 120px; text-align: right; }
+  .audio-item .text-preview { font-size: 0.8rem; color: #94a3b8; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .presets { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .preset-btn { padding: 4px 12px; border: 1px solid #334155; border-radius: 20px; background: transparent; color: #94a3b8; cursor: pointer; font-size: 0.8rem; }
+  .preset-btn:hover { border-color: #6366f1; color: #e2e8f0; }
+  .hint { font-size: 0.75rem; color: #475569; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Kokoro TTS Demo</h1>
+
+  <label>Input Text</label>
+  <textarea id="inputText" placeholder="Enter text to synthesize..."></textarea>
+  <div class="presets" id="presetContainer"></div>
+
+  <div class="row">
+    <div>
+      <label>Language</label>
+      <select id="langSelect"><option value="">Loading...</option></select>
+    </div>
+    <div>
+      <label>Voice</label>
+      <select id="voiceSelect"><option value="">Select language first</option></select>
+    </div>
+    <div style="flex:0.4">
+      <label>Speed</label>
+      <div class="speed-row">
+        <input type="range" id="speedRange" min="0.25" max="4" step="0.05" value="1.0">
+        <span class="speed-val" id="speedVal">1.0x</span>
+      </div>
+    </div>
+  </div>
+
+  <label style="margin-top:12px">Audio Format</label>
+  <div class="format-row">
+    <button class="format-btn active" data-fmt="mp3">MP3</button>
+    <button class="format-btn" data-fmt="wav">WAV</button>
+    <button class="format-btn" data-fmt="flac">FLAC</button>
+    <button class="format-btn" data-fmt="aac">AAC</button>
+    <button class="format-btn" data-fmt="pcm">PCM</button>
+  </div>
+  <div class="hint" id="formatHint">MP3: 128kbps. Good quality/size balance.</div>
+
+  <button class="btn btn-primary" id="generateBtn" onclick="generate()">Generate Speech</button>
+  <div class="status" id="status"></div>
+
+  <div class="audio-section" id="audioSection"></div>
+</div>
+
+<script>
+const API = '/v1';
+let allVoices = [];
+let format = 'mp3';
+
+const FORMAT_HINTS = {
+  'mp3':  'MP3: 128kbps. Good quality/size balance.',
+  'wav':  'WAV: uncompressed, lossless. Large files.',
+  'flac': 'FLAC: compressed, lossless. Best quality/size ratio.',
+  'aac':  'AAC: 128kbps. Better quality than MP3 at same bitrate.',
+  'pcm':  'PCM: raw audio data. No header, 16-bit signed integers.',
+};
+
+// Format buttons
+document.querySelectorAll('.format-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.format-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    format = btn.dataset.fmt;
+    document.getElementById('formatHint').textContent = FORMAT_HINTS[format] || '';
+  });
+});
+
+const LANG_NAMES = {
+  'en':    'English (US)',
+  'en-gb': 'English (UK)',
+  'cmn':   'Chinese (Mandarin)',
+  'ja':    'Japanese',
+  'es':    'Spanish',
+  'fr-fr': 'French',
+  'hi':    'Hindi',
+  'it':    'Italian',
+  'pt-br': 'Portuguese (BR)',
+};
+
+const LANG_PRESETS = {
+  'en': [
+    'Hello, this is a test of the English text to speech engine.',
+    'The quick brown fox jumps over the lazy dog.',
+    'Kokoro is a lightweight text-to-speech model with amazing voice quality.',
+  ],
+  'en-gb': [
+    'Good afternoon. The weather in London is quite lovely today.',
+    'Would you care for a cup of tea and some biscuits?',
+  ],
+  'cmn': [
+    '\u5343\u91cc\u4e4b\u884c\uff0c\u59cb\u4e8e\u8db3\u4e0b\u3002',
+    '\u4eca\u5929\u5929\u6c14\u4e0d\u9519\uff0c\u6211\u4eec\u53bbGitHub\u4e0a\u770b\u770bKokoro\u7684\u4ee3\u7801\u5427\u3002',
+    '\u6211\u7528Docker\u8dd1\u4e86\u4e00\u4e2aAPI\u670d\u52a1\uff0c\u7528\u7684GPU\u52a0\u901f\uff0c\u8fd9\u4e2abug\u5f88\u4e25\u91cd\u3002',
+  ],
+  'ja': [
+    '\u3053\u3093\u306b\u3061\u306f\u3001\u65e5\u672c\u8a9e\u306e\u97f3\u58f0\u5408\u6210\u306e\u30c6\u30b9\u30c8\u3067\u3059\u3002',
+    '\u7d20\u6674\u3089\u3057\u3044\u304a\u5929\u6c17\u3067\u3001\u5c71\u306b\u6563\u6b69\u306b\u884c\u304d\u307e\u3057\u3087\u3046\u3002',
+  ],
+  'es': [
+    'Hola, esta es una prueba del motor de s\u00edntesis de voz en espa\u00f1ol.',
+    'El r\u00e1pido zorro marr\u00f3n salta sobre el perro perezoso.',
+  ],
+  'fr-fr': [
+    'Bonjour, ceci est un test du moteur de synth\u00e8se vocale en fran\u00e7ais.',
+    'Le temps est magnifique aujourd\'hui, allons nous promener dans le parc.',
+  ],
+  'hi': [
+    '\u0928\u092e\u0938\u094d\u0924\u0947, \u092f\u0939 \u0939\u093f\u0902\u0926\u0940 \u092d\u093e\u0937\u093e \u092a\u094d\u0930\u0923\u093e\u0932\u0940 \u0915\u093e \u090f\u0915 \u092a\u0930\u0940\u0915\u094d\u0937\u0923 \u0939\u0948\u0964',
+  ],
+  'it': [
+    'Ciao, questo \u00e8 un test del motore di sintesi vocale in italiano.',
+    'Il tempo \u00e8 bellissimo oggi, andiamo a fare una passeggiata.',
+  ],
+  'pt-br': [
+    'Ol\u00e1, este \u00e9 um teste do motor de s\u00edntese de voz em portugu\u00eas.',
+    'O tempo est\u00e1 muito bonito hoje, vamos dar uma caminhada no parque.',
+  ],
+};
+
+// Speed slider
+const speedRange = document.getElementById('speedRange');
+const speedVal = document.getElementById('speedVal');
+speedRange.addEventListener('input', () => { speedVal.textContent = parseFloat(speedRange.value).toFixed(1) + 'x'; });
+
+// Language change -> update voices + presets
+document.getElementById('langSelect').addEventListener('change', () => {
+  updateVoices();
+  updatePresets();
+});
+
+function updatePresets() {
+  const lang = document.getElementById('langSelect').value;
+  const container = document.getElementById('presetContainer');
+  container.innerHTML = '';
+  const texts = LANG_PRESETS[lang] || [];
+  texts.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'preset-btn';
+    btn.textContent = t.length > 40 ? t.slice(0, 40) + '...' : t;
+    btn.title = t;
+    btn.addEventListener('click', () => { document.getElementById('inputText').value = t; });
+    container.appendChild(btn);
+  });
+}
+
+function updateVoices() {
+  const lang = document.getElementById('langSelect').value;
+  const sel = document.getElementById('voiceSelect');
+  sel.innerHTML = '';
+  const filtered = allVoices.filter(v => v.language === lang);
+  filtered.forEach((v, i) => {
+    const opt = document.createElement('option');
+    opt.value = v.id;
+    opt.textContent = v.id;
+    if (i === 0) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+// Load voices
+async function loadVoices() {
+  try {
+    const res = await fetch(API + '/voices');
+    const data = await res.json();
+    allVoices = data.data || [];
+
+    const langSel = document.getElementById('langSelect');
+    langSel.innerHTML = '';
+
+    const langs = [...new Set(allVoices.map(v => v.language))].sort();
+    langs.forEach(lang => {
+      const opt = document.createElement('option');
+      opt.value = lang;
+      opt.textContent = LANG_NAMES[lang] || lang;
+      if (lang === 'cmn') opt.selected = true;
+      langSel.appendChild(opt);
+    });
+
+    updateVoices();
+    updatePresets();
+  } catch (e) {
+    setStatus('Failed to load voices: ' + e.message, true);
+  }
+}
+
+async function generate() {
+  const text = document.getElementById('inputText').value.trim();
+  if (!text) { setStatus('Please enter some text', true); return; }
+
+  const voice = document.getElementById('voiceSelect').value;
+  const speed = parseFloat(speedRange.value);
+  const btn = document.getElementById('generateBtn');
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  setStatus('Generating speech...');
+
+  const t0 = performance.now();
+  try {
+    const res = await fetch(API + '/audio/speech', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'kokoro',
+        input: text,
+        voice: voice,
+        response_format: format,
+        speed: speed,
+        stream: false
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message || `HTTP ${res.status}`);
+    }
+
+    const blob = await res.blob();
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+    const url = URL.createObjectURL(blob);
+
+    addAudioPlayer(url, text, voice, elapsed, blob.size, format);
+    setStatus(`Done (${elapsed}s, ${(blob.size / 1024).toFixed(1)} KB)`);
+  } catch (e) {
+    setStatus('Error: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Generate Speech';
+  }
+}
+
+function addAudioPlayer(url, text, voice, elapsed, size, fmtLabel) {
+  const section = document.getElementById('audioSection');
+  const div = document.createElement('div');
+  div.className = 'audio-item';
+
+  const audio = document.createElement('audio');
+  audio.controls = true;
+  audio.src = url;
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.textContent = `${voice} | ${fmtLabel || format} | ${elapsed}s | ${(size/1024).toFixed(0)}KB`;
+
+  const preview = document.createElement('div');
+  preview.className = 'text-preview';
+  preview.textContent = text.length > 30 ? text.slice(0, 30) + '...' : text;
+  preview.title = text;
+
+  div.appendChild(preview);
+  div.appendChild(audio);
+  div.appendChild(meta);
+  section.insertBefore(div, section.firstChild);
+  audio.play();
+}
+
+function setStatus(msg, isError) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.classList.toggle('error', !!isError);
+}
+
+loadVoices();
+</script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-# kokoro-onnx
+# kokoro-onnx API
 
 OpenAI-compatible TTS API powered by [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx), deployed with Docker.
 
@@ -6,6 +6,7 @@ OpenAI-compatible TTS API powered by [kokoro-onnx](https://github.com/thewh1teag
 
 - OpenAI-compatible API (`POST /v1/audio/speech`, `GET /v1/models`)
 - 50+ voices across 9 languages (English, Mandarin, Japanese, Spanish, French, Hindi, Italian, Portuguese)
+- Chinese model with mixed CN/EN support (tech terms, abbreviations, English words)
 - Multiple audio formats: MP3, WAV, FLAC, AAC, PCM
 - Streaming and non-streaming response modes
 - GPU (CUDA) and CPU deployment modes
@@ -18,13 +19,22 @@ OpenAI-compatible TTS API powered by [kokoro-onnx](https://github.com/thewh1teag
 ```bash
 mkdir -p models voices
 
-# FP32 model (~300MB, recommended for GPU)
-curl -L -o models/kokoro-v1.0.onnx \
-  https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
+# Primary model (English/multilingual)
+curl -L -o models/kokoro-v0_19.fp16.onnx \
+  https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v0_19.fp16.onnx
 
-# Voices file
 curl -L -o voices/voices-v1.0.bin \
   https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+
+# Chinese model (optional, enables Chinese + mixed CN/EN)
+curl -L -o models/kokoro-v1.1-zh.onnx \
+  https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.1-zh.onnx
+
+curl -L -o voices/voices-v1.1-zh.bin \
+  https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.1-zh.bin
+
+curl -L -o models/config.json \
+  https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh/raw/main/config.json
 ```
 
 ### 2. Configure
@@ -107,6 +117,33 @@ curl http://localhost:5023/v1/voices
 }
 ```
 
+## Chinese & Mixed Language Support
+
+When the Chinese model is enabled (`ZH_ENABLED=true`), the API automatically detects Chinese characters in the input text and routes to the Chinese model with a three-level G2P strategy for handling embedded English words:
+
+1. **High-frequency dictionary** - exact match for known tech terms and common words
+   - `GitHub` → 给特哈布, `Docker` → 多克, `bug` → 巴格, `Python` → 派森
+2. **Uppercase abbreviations** - letter-by-letter spelling (e.g. `API`, `GPU`, `SSH`)
+3. **g2p_en fallback** - ARPABET phoneme prediction mapped to Chinese characters for unknown English words
+
+### Chinese model voices
+
+The Chinese model has its own voice set (`zf_001` - `zf_099`, `zm_009` - `zm_100`). When using a Chinese voice (`zf_*` / `zm_*`) or when input contains Chinese characters, the Chinese model is used automatically.
+
+```bash
+# Pure Chinese
+curl -X POST http://localhost:5023/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"input": "千里之行，始于足下。", "voice": "zf_001"}' \
+  --output chinese.wav
+
+# Mixed Chinese + English
+curl -X POST http://localhost:5023/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"input": "我用Docker跑了一个API服务，用的GPU加速。", "voice": "zf_001"}' \
+  --output mixed.wav
+```
+
 ## Configuration
 
 Environment variables (`.env` file):
@@ -115,12 +152,18 @@ Environment variables (`.env` file):
 |----------|---------|-------------|
 | `API_KEY` | `sk-kokoro` | Bearer token for authentication |
 | `AUTH_ENABLED` | `false` | Enable authentication |
-| `MODEL_PATH` | `models/kokoro-v0_19.fp16.onnx` | Path to ONNX model |
-| `VOICES_PATH` | `voices/voices-v1.0.bin` | Path to voices file |
+| `MODEL_PATH` | `models/kokoro-v0_19.fp16.onnx` | Path to primary ONNX model |
+| `VOICES_PATH` | `voices/voices-v1.0.bin` | Path to primary voices file |
 | `HOST` | `0.0.0.0` | Listen host |
 | `PORT` | `5023` | Listen port |
+| `ZH_ENABLED` | `true` | Enable Chinese model |
+| `ZH_MODEL_PATH` | `models/kokoro-v1.1-zh.onnx` | Path to Chinese ONNX model |
+| `ZH_VOICES_PATH` | `voices/voices-v1.1-zh.bin` | Path to Chinese voices file |
+| `ZH_VOCAB_CONFIG` | `models/config.json` | Path to Chinese vocab config |
 
 ## Available Voices
+
+### Primary model (English/multilingual)
 
 | Prefix | Language | Description |
 |--------|----------|-------------|
@@ -141,6 +184,14 @@ Environment variables (`.env` file):
 | `im_` | Italian | Male |
 | `pf_` | Portuguese (BR) | Female |
 | `pm_` | Portuguese (BR) | Male |
+
+### Chinese model
+
+| Prefix | Range | Description |
+|--------|-------|-------------|
+| `af_maple` / `af_sol` / `bf_vale` | English voices | English (built-in) |
+| `zf_` | `zf_001` - `zf_099` | Mandarin Female |
+| `zm_` | `zm_009` - `zm_100` | Mandarin Male |
 
 ## Requirements
 

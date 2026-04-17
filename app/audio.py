@@ -1,8 +1,8 @@
 import io
 
+import av
 import numpy as np
 import soundfile as sf
-from pydub import AudioSegment
 
 MIME_TYPES: dict[str, str] = {
     "mp3": "audio/mpeg",
@@ -29,26 +29,34 @@ def pcm_to_flac_bytes(samples: np.ndarray, sample_rate: int) -> bytes:
     return buf.getvalue()
 
 
-def _pcm_to_pydub_segment(samples: np.ndarray, sample_rate: int) -> AudioSegment:
+def _encode_with_av(
+    samples: np.ndarray, sample_rate: int, codec: str, container_format: str, bitrate: int = 128000
+) -> bytes:
+    """Encode PCM samples using PyAV (in-process, no subprocess)."""
     int16 = (samples * 32767).astype(np.int16)
     buf = io.BytesIO()
-    sf.write(buf, int16, sample_rate, format="WAV", subtype="PCM_16")
-    buf.seek(0)
-    return AudioSegment.from_wav(buf)
+    container = av.open(buf, mode="w", format=container_format)
+    stream = container.add_stream(codec, rate=sample_rate, layout="mono")
+    stream.bit_rate = bitrate
+
+    frame = av.AudioFrame.from_ndarray(int16.reshape(1, -1), format="s16", layout="mono")
+    frame.sample_rate = sample_rate
+
+    for packet in stream.encode(frame):
+        container.mux(packet)
+    for packet in stream.encode():
+        container.mux(packet)
+
+    container.close()
+    return buf.getvalue()
 
 
 def pcm_to_mp3_bytes(samples: np.ndarray, sample_rate: int) -> bytes:
-    segment = _pcm_to_pydub_segment(samples, sample_rate)
-    buf = io.BytesIO()
-    segment.export(buf, format="mp3", bitrate="128k")
-    return buf.getvalue()
+    return _encode_with_av(samples, sample_rate, codec="mp3", container_format="mp3", bitrate=128000)
 
 
 def pcm_to_aac_bytes(samples: np.ndarray, sample_rate: int) -> bytes:
-    segment = _pcm_to_pydub_segment(samples, sample_rate)
-    buf = io.BytesIO()
-    segment.export(buf, format="adts", bitrate="128k")
-    return buf.getvalue()
+    return _encode_with_av(samples, sample_rate, codec="aac", container_format="adts", bitrate=128000)
 
 
 def pcm_to_raw_bytes(samples: np.ndarray) -> bytes:

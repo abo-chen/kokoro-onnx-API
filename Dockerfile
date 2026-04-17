@@ -1,4 +1,5 @@
 ARG BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04
+ARG TARGET=gpu
 
 FROM ${BASE_IMAGE} AS base
 
@@ -16,15 +17,19 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 FROM base AS builder
 
+ARG TARGET
+
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY pyproject.toml .
 RUN uv venv /opt/venv --python python3.12 && \
     . /opt/venv/bin/activate && \
-    CMAKE_MAKE_PROGRAM=/usr/bin/gmake CC=/usr/bin/gcc CXX=/usr/bin/g++ uv pip install --no-cache . ; \
-    if [ "$TARGET" = "gpu" ]; then \
-        uv pip install --no-cache --force-reinstall onnxruntime-gpu; \
+    CMAKE_MAKE_PROGRAM=/usr/bin/gmake CC=/usr/bin/gcc CXX=/usr/bin/g++ uv pip install --no-cache .
+# GPU mode: install onnxruntime-gpu, then remove CPU-only onnxruntime
+RUN if [ "$TARGET" = "gpu" ]; then \
+        . /opt/venv/bin/activate && \
+        pip install --no-cache --force-reinstall onnxruntime-gpu; \
     fi
 
 FROM base
@@ -38,8 +43,6 @@ COPY app/ app/
 COPY models/ models/
 COPY voices/ voices/
 COPY static/ static/
-
-ENV PYTHONWARNINGS="ignore::SyntaxWarning"
 
 EXPOSE 5023
 

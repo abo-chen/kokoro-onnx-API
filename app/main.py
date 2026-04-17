@@ -14,7 +14,6 @@ from app.config import settings
 from app.routers import models as models_router
 from app.routers import speech as speech_router
 
-warnings.filterwarnings("ignore", category=SyntaxWarning, module="pydub")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,8 +37,20 @@ async def lifespan(app: FastAPI):
     # Load primary (English/multilingual) model
     logger.info(f"Loading model from {settings.MODEL_PATH}")
     t0 = time.time()
-    providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-    session = rt.InferenceSession(settings.MODEL_PATH, providers=providers)
+
+    # Configure session options to reduce memory usage
+    so = rt.SessionOptions()
+    so.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+    # CUDA provider - gpu_mem_limit controls arena growth to prevent unbounded VRAM usage
+    providers = [
+        ("CUDAExecutionProvider", {
+            "device_id": "0",
+            "gpu_mem_limit": "2147483648",  # 2GB soft limit
+        }),
+        "CPUExecutionProvider",
+    ]
+    session = rt.InferenceSession(settings.MODEL_PATH, sess_options=so, providers=providers)
     logger.info(f"ONNX session providers: {session.get_providers()}")
     kokoro_instance = Kokoro.from_session(session, settings.VOICES_PATH, vocab_config="models/config.json")
     logger.info(f"Model loaded in {time.time() - t0:.1f}s, voices: {kokoro_instance.get_voices()}")

@@ -117,28 +117,105 @@ async def create_speech(
         return await _full_response(body, fmt, content_type, mode)
 
 
+import re
+
+
+def _split_sentences(text: str, max_chars: int = 200) -> list[str]:
+    """Split text into sentences at natural boundaries."""
+    # Split on sentence-ending punctuation followed by a space or end of string
+    parts = re.split(r'(?<=[。！？.!?\n])\s*', text)
+    # Merge short segments to avoid too many tiny chunks
+    chunks = []
+    current = ""
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        if len(current) + len(part) + 1 > max_chars and current:
+            chunks.append(current)
+            current = part
+        else:
+            current = current + (" " if current else "") + part
+    if current:
+        chunks.append(current)
+    return chunks or [text]
+
+
+def _split_clause(text: str) -> list[str]:
+    """Split a sentence at commas/semicolons for sub-sentence processing."""
+    parts = re.split(r'(?<=[，、；,;])\s*', text)
+    return [p.strip() for p in parts if p.strip()]
+
+
+MAX_PHONEME_LENGTH = 500
+
+
 async def _generate_samples(body: SpeechRequest, mode: str):
     """Generate audio samples based on mode. Returns (samples, sample_rate)."""
     if mode == "zh":
         text = replace_english(body.input)
         voice = _resolve_zh_voice(body.voice)
+        sentences = _split_sentences(text)
+        all_samples = []
         async with zh_lock:
-            phonemes, _ = await asyncio.to_thread(zh_g2p, text)
-            samples, sample_rate = await asyncio.to_thread(
-                zh_kokoro.create, phonemes, voice, body.speed, is_phonemes=True
-            )
+            for sentence in sentences:
+                phonemes, _ = await asyncio.to_thread(zh_g2p, sentence)
+                # If phonemes too long, split original text at commas and re-run G2P
+                if len(phonemes) > MAX_PHONEME_LENGTH:
+                    clauses = _split_clause(sentence)
+                    phonemes_list = []
+                    for clause in clauses:
+                        ph, _ = await asyncio.to_thread(zh_g2p, clause)
+                        phonemes_list.append(ph)
+                else:
+                    phonemes_list = [phonemes]
+                for ph in phonemes_list:
+                    # Final safety: hard split if still too long
+                    ph_parts = [ph[i:i+MAX_PHONEME_LENGTH] for i in range(0, len(ph), MAX_PHONEME_LENGTH)]
+                    for p in ph_parts:
+                        samples, sample_rate = await asyncio.to_thread(
+                            zh_kokoro.create, p, voice, body.speed, is_phonemes=True
+                        )
+                        all_samples.append(samples)
+        if all_samples:
+            return np.concatenate(all_samples), sample_rate
+        return np.array([], dtype=np.float32), 24000
     elif mode == "ja":
+        sentences = _split_sentences(body.input)
+        all_samples = []
         async with kokoro_lock:
-            phonemes, _ = await asyncio.to_thread(ja_g2p, body.input)
-            samples, sample_rate = await asyncio.to_thread(
-                kokoro.create, phonemes, body.voice, body.speed, is_phonemes=True
-            )
+            for sentence in sentences:
+                phonemes, _ = await asyncio.to_thread(ja_g2p, sentence)
+                if len(phonemes) > MAX_PHONEME_LENGTH:
+                    clauses = _split_clause(sentence)
+                    phonemes_list = []
+                    for clause in clauses:
+                        ph, _ = await asyncio.to_thread(ja_g2p, clause)
+                        phonemes_list.append(ph)
+                else:
+                    phonemes_list = [phonemes]
+                for ph in phonemes_list:
+                    ph_parts = [ph[i:i+MAX_PHONEME_LENGTH] for i in range(0, len(ph), MAX_PHONEME_LENGTH)]
+                    for p in ph_parts:
+                        samples, sample_rate = await asyncio.to_thread(
+                            kokoro.create, p, body.voice, body.speed, is_phonemes=True
+                        )
+                        all_samples.append(samples)
+        if all_samples:
+            return np.concatenate(all_samples), sample_rate
+        return np.array([], dtype=np.float32), 24000
     else:
+        sentences = _split_sentences(body.input)
+        all_samples = []
         async with kokoro_lock:
-            samples, sample_rate = await asyncio.to_thread(
-                kokoro.create, body.input, body.voice, body.speed
-            )
-    return samples, sample_rate
+            for sentence in sentences:
+                samples, sample_rate = await asyncio.to_thread(
+                    kokoro.create, sentence, body.voice, body.speed
+                )
+                all_samples.append(samples)
+        if all_samples:
+            return np.concatenate(all_samples), sample_rate
+        return np.array([], dtype=np.float32), 24000
 
 
 async def _full_response(body: SpeechRequest, fmt: str, content_type: str, mode: str) -> Response:

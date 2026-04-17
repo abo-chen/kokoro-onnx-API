@@ -5,9 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "kokoro-onnx[gpu]",
+    "kokoro-onnx",
     "soundfile",
-    "pydub",
+    "av",
     "fastapi",
     "uvicorn[standard]",
     "pydantic-settings",
@@ -17,3 +17,6 @@ dependencies = [
     "unidic",
     "g2p_en",
 ]
+
+[project.optional-dependencies]
+gpu = ["kokoro-onnx[gpu]"]

@@ -105,12 +105,12 @@ curl http://localhost:5023/v1/models
 
 Interactive demo page for testing speech synthesis in the browser.
 
-### GET /v1/voices
+### GET /v1/audio/voices
 
 List available voices with language info:
 
 ```bash
-curl http://localhost:5023/v1/voices
+curl http://localhost:5023/v1/audio/voices
 ```
 
 ```json

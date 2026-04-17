@@ -105,12 +105,12 @@ curl http://localhost:5023/v1/models
 
 交互式 Demo 页面，可在浏览器中测试语音合成。
 
-### GET /v1/voices
+### GET /v1/audio/voices
 
 查询可用音色及语言信息：
 
 ```bash
-curl http://localhost:5023/v1/voices
+curl http://localhost:5023/v1/audio/voices
 ```
 
 ```json

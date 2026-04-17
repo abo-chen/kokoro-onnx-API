@@ -200,7 +200,7 @@ function updateVoices() {
 // Load voices
 async function loadVoices() {
   try {
-    const res = await fetch(API + '/voices');
+    const res = await fetch(API + '/audio/voices');
     const data = await res.json();
     allVoices = data.data || [];
 

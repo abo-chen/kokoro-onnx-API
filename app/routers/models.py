@@ -80,7 +80,7 @@ async def list_models(_auth: None = Depends(verify_api_key)):
     return ModelListResponse(object="list", data=data)
 
 
-@router.get("/voices")
+@router.get("/audio/voices")
 async def list_voices(_auth: None = Depends(verify_api_key)):
     if kokoro is None:
         return {"error": {"message": "Model not loaded", "type": "server_error"}}

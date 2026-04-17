@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 import warnings
+warnings.filterwarnings("ignore", category=SyntaxWarning)
 from contextlib import asynccontextmanager
 
 import onnxruntime as rt
@@ -120,16 +121,22 @@ async def lifespan(app: FastAPI):
             with zipfile.ZipFile(zip_path) as zf:
                 zf.extractall(tmp_dir)
             os.remove(zip_path)
-            # Copy extracted files into the (possibly mounted) dicdir
+            # Zip extracts into a subdirectory, copy its contents directly into DICDIR
             os.makedirs(DICDIR, exist_ok=True)
-            for item in os.listdir(tmp_dir):
-                src = os.path.join(tmp_dir, item)
+            extracted = os.path.join(tmp_dir, os.listdir(tmp_dir)[0])
+            for item in os.listdir(extracted):
+                src = os.path.join(extracted, item)
                 dst = os.path.join(DICDIR, item)
                 if os.path.isdir(src):
                     shutil.copytree(src, dst, dirs_exist_ok=True)
                 else:
                     shutil.copy2(src, dst)
             shutil.rmtree(tmp_dir)
+            # Create mecabrc required by fugashi
+            mecabrc_path = os.path.join(DICDIR, "mecabrc")
+            if not os.path.isfile(mecabrc_path):
+                with open(mecabrc_path, "w") as f:
+                    f.write(f"dicdir = {DICDIR}\n")
             logger.info("UniDic dictionary downloaded and installed")
         ja_g2p_instance = ja.JAG2P()
         speech_router.set_ja_g2p(ja_g2p_instance)

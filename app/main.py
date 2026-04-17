@@ -42,11 +42,13 @@ async def lifespan(app: FastAPI):
     so = rt.SessionOptions()
     so.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_ALL
 
-    # CUDA provider - gpu_mem_limit controls arena growth to prevent unbounded VRAM usage
+    # CUDA provider options to control arena growth and reduce VRAM accumulation
     providers = [
         ("CUDAExecutionProvider", {
             "device_id": "0",
-            "gpu_mem_limit": "2147483648",  # 2GB soft limit
+            "gpu_mem_limit": "2147483648",  # 2GB hard cap on arena
+            "arena_extend_strategy": "kSameAsRequested",  # allocate only what's needed
+            "cudnn_conv_algo_search": "HEURISTIC",  # avoid exhaustive workspace allocation
         }),
         "CPUExecutionProvider",
     ]

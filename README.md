@@ -211,6 +211,28 @@ Environment variables (`.env` file):
 | `zf_` | `zf_001` - `zf_099` | Mandarin Female |
 | `zm_` | `zm_009` - `zm_100` | Mandarin Male |
 
+## GPU Memory (VRAM) Behavior
+
+ONNX Runtime's CUDA allocator uses an arena (memory pool) that grows monotonically — memory is never returned to the GPU once allocated. This project configures the following CUDA provider options to mitigate unbounded VRAM growth:
+
+- `arena_extend_strategy: kSameAsRequested` — allocate only what's needed instead of doubling (default `kNextPowerOfTwo`)
+- `cudnn_conv_algo_search: HEURISTIC` — avoid exhaustive algorithm benchmarking that allocates large temporary workspaces
+- `gpu_mem_limit: 2GB` — hard cap on arena allocation
+
+With these settings, VRAM stabilizes within the same language after repeated generation:
+
+| Scenario | Stable VRAM |
+|----------|-------------|
+| Baseline (idle) | ~1300 MB |
+| English (97s audio, repeated) | ~2013 MB |
+| Chinese (97s audio, repeated) | ~2300 MB |
+| Japanese (82s audio, repeated) | ~2314 MB |
+| Switching between languages | up to ~4 GB |
+
+Short text generation stays near baseline with minimal VRAM increase.
+
+> **Note:** VRAM values are for reference only and may vary by GPU, driver, and input content.
+
 ## Requirements
 
 - [Docker](https://docs.docker.com/get-docker/)

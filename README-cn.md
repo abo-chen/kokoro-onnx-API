@@ -211,6 +211,28 @@ curl -X POST http://localhost:5023/v1/audio/speech \
 | `zf_` | `zf_001` - `zf_099` | 普通话女声 |
 | `zm_` | `zm_009` - `zm_100` | 普通话男声 |
 
+## GPU 显存（VRAM）行为
+
+ONNX Runtime 的 CUDA 分配器使用 arena（内存池）模式，分配的内存不会归还给 GPU。本项目通过以下 CUDA Provider 选项缓解显存无限增长：
+
+- `arena_extend_strategy: kSameAsRequested` — 按需分配，避免默认的 2 的幂次翻倍预留
+- `cudnn_conv_algo_search: HEURISTIC` — 避免穷举算法调优时分配大量临时工作空间
+- `gpu_mem_limit: 2GB` — arena 分配硬上限
+
+在此配置下，同一语言重复生成时显存会趋于稳定：
+
+| 场景 | 稳定显存 |
+|------|----------|
+| 基线（空闲） | ~1300 MB |
+| 英文（97 秒音频，重复生成） | ~2013 MB |
+| 中文（97 秒音频，重复生成） | ~2300 MB |
+| 日语（82 秒音频，重复生成） | ~2314 MB |
+| 多语言切换 | 最高 ~4 GB |
+
+短文本生成显存增量很小，接近基线水平。
+
+> **注意：** 显存数据仅供参考，实际值因 GPU、驱动版本和输入内容而异。
+
 ## 系统要求
 
 - [Docker](https://docs.docker.com/get-docker/)

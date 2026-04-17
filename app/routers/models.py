@@ -94,10 +94,11 @@ async def list_voices(_auth: None = Depends(verify_api_key)):
         })
     if zh_kokoro is not None:
         for name in sorted(zh_kokoro.get_voices()):
-            prefix = name[:2]
+            if not name.startswith(("zf_", "zm_")):
+                continue
             voices.append({
                 "id": name,
-                "language": LANGUAGE_MAP.get(prefix, "unknown"),
-                "description": VOICE_DESCRIPTIONS.get(prefix, "Unknown"),
+                "language": "cmn",
+                "description": "Mandarin Female" if name.startswith("zf_") else "Mandarin Male",
             })
     return {"object": "list", "data": voices}

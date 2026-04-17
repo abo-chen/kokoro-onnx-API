@@ -205,9 +205,11 @@ Environment variables (`.env` file):
 
 ### Chinese model
 
+The voices list endpoint only returns Chinese voices (`zf_*` / `zm_*`) from this model. Built-in English voices (`af_maple`, `af_sol`, `bf_vale`) still work but are hidden to avoid confusion with the primary model's English voices. To show all voices, remove the filter in `app/routers/models.py`.
+
 | Prefix | Range | Description |
 |--------|-------|-------------|
-| `af_maple` / `af_sol` / `bf_vale` | English voices | English (built-in) |
+| `af_maple` / `af_sol` / `bf_vale` | English voices | English (built-in, hidden from voices list) |
 | `zf_` | `zf_001` - `zf_099` | Mandarin Female |
 | `zm_` | `zm_009` - `zm_100` | Mandarin Male |
 

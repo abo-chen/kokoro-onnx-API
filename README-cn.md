@@ -205,9 +205,11 @@ curl -X POST http://localhost:5023/v1/audio/speech \
 
 ### 中文模型
 
+音色列表接口仅返回中文音色（`zf_*` / `zm_*`）。内置英语音色（`af_maple`、`af_sol`、`bf_vale`）仍可正常使用，但不在列表中显示，以避免与主模型的英语音色混淆。如需显示全部音色，移除 `app/routers/models.py` 中的过滤逻辑即可。
+
 | 前缀 | 范围 | 说明 |
 |------|------|------|
-| `af_maple` / `af_sol` / `bf_vale` | 内置英语音色 | 英语 |
+| `af_maple` / `af_sol` / `bf_vale` | 内置英语音色 | 英语（已从列表隐藏） |
 | `zf_` | `zf_001` - `zf_099` | 普通话女声 |
 | `zm_` | `zm_009` - `zm_100` | 普通话男声 |
 

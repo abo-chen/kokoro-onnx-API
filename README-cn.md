@@ -7,10 +7,13 @@
 - OpenAI 兼容 API（`POST /v1/audio/speech`、`GET /v1/models`）
 - 50+ 音色，覆盖 9 种语言（英语、普通话、日语、西班牙语、法语、印地语、意大利语、葡萄牙语）
 - 中文模型支持中英文混合输入（技术术语、缩写、英文单词）
-- 多种音频格式：MP3、WAV、FLAC、AAC、PCM
+- 日语 TTS 通过 misaki-fork[ja] G2P + unidic 词典实现
+- 长文本自动分句处理（降低显存占用）
+- 多种音频格式：MP3、WAV、FLAC、AAC、PCM（PyAV 编码，无 ffmpeg 子进程）
 - 支持流式和非流式响应
 - GPU（CUDA）和 CPU 两种部署模式
 - 可选 Bearer Token 鉴权
+- 交互式 Demo 页面（`/demo`）
 
 ## 快速开始
 
@@ -98,6 +101,10 @@ curl -X POST http://localhost:5023/v1/audio/speech \
 curl http://localhost:5023/v1/models
 ```
 
+### GET /demo
+
+交互式 Demo 页面，可在浏览器中测试语音合成。
+
 ### GET /v1/voices
 
 查询可用音色及语言信息：
@@ -115,6 +122,17 @@ curl http://localhost:5023/v1/voices
     {"id": "am_adam", "language": "en", "description": "美式男声"}
   ]
 }
+```
+
+## 日语 TTS
+
+日语音色（`jf_*` / `jm_*`）使用 misaki-fork[ja] G2P 配合 unidic 词典生成音素。首次使用时需下载 unidic 词典（约 775MB），通过 Docker 卷持久化保存。
+
+```bash
+curl -X POST http://localhost:5023/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"input": "こんにちは、世界！", "voice": "jf_heart"}' \
+  --output japanese.wav
 ```
 
 ## 中文及中英混合支持

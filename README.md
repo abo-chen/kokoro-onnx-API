@@ -7,10 +7,13 @@ OpenAI-compatible TTS API powered by [kokoro-onnx](https://github.com/thewh1teag
 - OpenAI-compatible API (`POST /v1/audio/speech`, `GET /v1/models`)
 - 50+ voices across 9 languages (English, Mandarin, Japanese, Spanish, French, Hindi, Italian, Portuguese)
 - Chinese model with mixed CN/EN support (tech terms, abbreviations, English words)
-- Multiple audio formats: MP3, WAV, FLAC, AAC, PCM
+- Japanese TTS via misaki-fork[ja] G2P with unidic dictionary
+- Text chunking for long input (sentence-level splitting to reduce VRAM usage)
+- Multiple audio formats: MP3, WAV, FLAC, AAC, PCM (PyAV, no ffmpeg subprocess)
 - Streaming and non-streaming response modes
 - GPU (CUDA) and CPU deployment modes
 - Optional Bearer Token authentication
+- Interactive demo page at `/demo`
 
 ## Quick Start
 
@@ -98,6 +101,10 @@ curl -X POST http://localhost:5023/v1/audio/speech \
 curl http://localhost:5023/v1/models
 ```
 
+### GET /demo
+
+Interactive demo page for testing speech synthesis in the browser.
+
 ### GET /v1/voices
 
 List available voices with language info:
@@ -115,6 +122,17 @@ curl http://localhost:5023/v1/voices
     {"id": "am_adam", "language": "en", "description": "US Male"}
   ]
 }
+```
+
+## Japanese TTS
+
+Japanese voices (`jf_*` / `jm_*`) use the misaki-fork[ja] G2P with the unidic dictionary for phoneme generation. Requires the unidic dictionary (~775MB), which is automatically downloaded on first use and persisted via Docker volume.
+
+```bash
+curl -X POST http://localhost:5023/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"input": "こんにちは、世界！", "voice": "jf_heart"}' \
+  --output japanese.wav
 ```
 
 ## Chinese & Mixed Language Support

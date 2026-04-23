@@ -31,6 +31,8 @@ RUN if [ "$TARGET" = "gpu" ]; then \
         . /opt/venv/bin/activate && \
         pip install --no-cache --force-reinstall onnxruntime-gpu; \
     fi
+# Fix speed < 1.0 bug: np.int32 -> np.float32 for input_ids model format
+RUN sed -i 's/dtype=np.int32)/dtype=np.float32)/' /opt/venv/lib/python3.12/site-packages/kokoro_onnx/__init__.py
 
 FROM base
 

@@ -30,8 +30,9 @@ curl -L -o voices/voices-v1.0.bin \
   https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
 
 # Chinese model (optional, enables Chinese + mixed CN/EN)
+# Use HuggingFace version — the GitHub releases version has a speed < 1.0 bug (speed cast to int32)
 curl -L -o models/kokoro-v1.1-zh.onnx \
-  https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.1-zh.onnx
+  https://huggingface.co/onnx-community/Kokoro-82M-v1.1-zh-ONNX/resolve/main/onnx/model.onnx
 
 curl -L -o voices/voices-v1.1-zh.bin \
   https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.1-zh.bin
@@ -92,7 +93,7 @@ curl -X POST http://localhost:5023/v1/audio/speech \
 | `input` | string | required | Text to synthesize (max 4096 chars) |
 | `voice` | string | `"af_nicole"` | Voice name |
 | `response_format` | string | `"mp3"` | `mp3`, `wav`, `flac`, `aac`, `pcm` |
-| `speed` | float | `1.0` | Speed (0.25 - 4.0) |
+| `speed` | float | `1.0` | Speed (0.5 - 2.0) |
 | `stream` | bool | `false` | Enable streaming response |
 
 ### GET /v1/models
@@ -241,6 +242,19 @@ Japanese uses G2P (text → phonemes → audio) with the primary model, while Ch
 
 - [Docker](https://docs.docker.com/get-docker/)
 - **GPU mode:** [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) + NVIDIA GPU
+- **Platform:** x86_64 (AMD64/Intel 64). ARM platforms (e.g. Apple Silicon, Raspberry Pi) are not currently supported.
+
+## Changelog
+
+### Speed < 1.0 Fix
+
+The Chinese model (`kokoro-v1.1-zh.onnx`) from the GitHub releases has a bug where the `speed` parameter is cast to `int32`, making only 0.5, 1.0, and 2.0 work — any other value causes a runtime error.
+
+**Fix:** Use the HuggingFace-exported model which defines `speed` as `float32`:
+- Model: [onnx-community/Kokoro-82M-v1.1-zh-ONNX](https://huggingface.co/onnx-community/Kokoro-82M-v1.1-zh-ONNX)
+- Reference: [kokoro-onnx#155](https://github.com/thewh1teagle/kokoro-onnx/issues/155)
+
+The Dockerfile also patches the kokoro-onnx library (`np.int32` → `np.float32`) as a safeguard.
 
 ## License
 

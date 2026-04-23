@@ -110,34 +110,59 @@ async def lifespan(app: FastAPI):
         import tempfile
         from unidic import DICDIR
         from misaki import ja
+        unidic_data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "unidic")
         if not os.path.isfile(os.path.join(DICDIR, "sys.dic")):
-            logger.info("UniDic not found, downloading...")
-            import urllib.request
-            url = "https://cotonoha-dic.s3-ap-northeast-1.amazonaws.com/unidic-3.1.0.zip"
-            zip_path = os.path.join(tempfile.gettempdir(), "unidic.zip")
-            tmp_dir = os.path.join(tempfile.gettempdir(), "unidic_tmp")
-            urllib.request.urlretrieve(url, zip_path)
-            import zipfile
-            with zipfile.ZipFile(zip_path) as zf:
-                zf.extractall(tmp_dir)
-            os.remove(zip_path)
-            # Zip extracts into a subdirectory, copy its contents directly into DICDIR
-            os.makedirs(DICDIR, exist_ok=True)
-            extracted = os.path.join(tmp_dir, os.listdir(tmp_dir)[0])
-            for item in os.listdir(extracted):
-                src = os.path.join(extracted, item)
-                dst = os.path.join(DICDIR, item)
-                if os.path.isdir(src):
-                    shutil.copytree(src, dst, dirs_exist_ok=True)
-                else:
-                    shutil.copy2(src, dst)
-            shutil.rmtree(tmp_dir)
-            # Create mecabrc required by fugashi
-            mecabrc_path = os.path.join(DICDIR, "mecabrc")
-            if not os.path.isfile(mecabrc_path):
-                with open(mecabrc_path, "w") as f:
-                    f.write(f"dicdir = {DICDIR}\n")
-            logger.info("UniDic dictionary downloaded and installed")
+            if os.path.isdir(unidic_data_dir) and os.path.isfile(os.path.join(unidic_data_dir, "sys.dic")):
+                os.makedirs(DICDIR, exist_ok=True)
+                for item in os.listdir(unidic_data_dir):
+                    src = os.path.join(unidic_data_dir, item)
+                    dst = os.path.join(DICDIR, item)
+                    if os.path.isdir(src):
+                        shutil.copytree(src, dst, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(src, dst)
+                logger.info("UniDic installed from data/unidic")
+            else:
+                logger.info("UniDic not found, downloading...")
+                import urllib.request
+                url = "https://cotonoha-dic.s3-ap-northeast-1.amazonaws.com/unidic-3.1.0.zip"
+                zip_path = os.path.join(tempfile.gettempdir(), "unidic.zip")
+                tmp_dir = os.path.join(tempfile.gettempdir(), "unidic_tmp")
+                urllib.request.urlretrieve(url, zip_path)
+                import zipfile
+                with zipfile.ZipFile(zip_path) as zf:
+                    zf.extractall(tmp_dir)
+                os.remove(zip_path)
+                extracted = os.path.join(tmp_dir, os.listdir(tmp_dir)[0])
+                # Save to persistent data/unidic
+                os.makedirs(unidic_data_dir, exist_ok=True)
+                for item in os.listdir(extracted):
+                    src = os.path.join(extracted, item)
+                    dst = os.path.join(unidic_data_dir, item)
+                    if os.path.isdir(src):
+                        shutil.copytree(src, dst, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(src, dst)
+                shutil.rmtree(tmp_dir)
+                # Copy to DICDIR for runtime use
+                os.makedirs(DICDIR, exist_ok=True)
+                for item in os.listdir(unidic_data_dir):
+                    src = os.path.join(unidic_data_dir, item)
+                    dst = os.path.join(DICDIR, item)
+                    if os.path.isdir(src):
+                        shutil.copytree(src, dst, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(src, dst)
+                # Create mecabrc required by fugashi
+                mecabrc_path = os.path.join(DICDIR, "mecabrc")
+                if not os.path.isfile(mecabrc_path):
+                    with open(mecabrc_path, "w") as f:
+                        f.write(f"dicdir = {DICDIR}\n")
+                mecabrc_data = os.path.join(unidic_data_dir, "mecabrc")
+                if not os.path.isfile(mecabrc_data):
+                    with open(mecabrc_data, "w") as f:
+                        f.write(f"dicdir = {DICDIR}\n")
+                logger.info("UniDic downloaded and saved to data/unidic")
         ja_g2p_instance = ja.JAG2P()
         speech_router.set_ja_g2p(ja_g2p_instance)
         logger.info("Japanese G2P loaded")

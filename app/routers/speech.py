@@ -10,6 +10,7 @@ from app.audio import encode_audio, get_content_type, needs_full_audio
 from app.auth import verify_api_key
 from app.g2p import contains_chinese, replace_english
 from app.models import SpeechRequest
+from app.timing import Timer
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,10 @@ zh_g2p = None
 
 # Japanese G2P (misaki-fork[ja])
 ja_g2p = None
+
+# CUDA config for VRAM release/reload
+_cuda_providers = None
+_cuda_provider_options = None
 
 
 def set_kokoro(instance, lock: asyncio.Lock):
@@ -44,6 +49,26 @@ def set_zh_kokoro(instance, lock: asyncio.Lock, g2p):
 def set_ja_g2p(g2p):
     global ja_g2p
     ja_g2p = g2p
+
+
+def set_cuda_config(providers, provider_options):
+    global _cuda_providers, _cuda_provider_options
+    _cuda_providers = providers
+    _cuda_provider_options = provider_options
+
+
+def _ensure_cuda(kokoro_inst):
+    """Reload CUDA provider if it was previously released."""
+    if _cuda_providers and "CUDAExecutionProvider" not in kokoro_inst.sess.get_providers():
+        with Timer("cuda reload"):
+            kokoro_inst.sess.set_providers(_cuda_providers, _cuda_provider_options)
+
+
+def _release_vram(kokoro_inst):
+    """Release GPU memory by unloading CUDA execution provider."""
+    if _cuda_providers and "CUDAExecutionProvider" in kokoro_inst.sess.get_providers():
+        with Timer("cuda release"):
+            kokoro_inst.sess.set_providers(["CPUExecutionProvider"])
 
 
 def _get_mode(body: SpeechRequest) -> str:
@@ -158,25 +183,29 @@ async def _generate_samples(body: SpeechRequest, mode: str):
         sentences = _split_sentences(text)
         all_samples = []
         async with zh_lock:
-            for sentence in sentences:
-                phonemes, _ = await asyncio.to_thread(zh_g2p, sentence)
-                # If phonemes too long, split original text at commas and re-run G2P
-                if len(phonemes) > MAX_PHONEME_LENGTH:
-                    clauses = _split_clause(sentence)
-                    phonemes_list = []
-                    for clause in clauses:
-                        ph, _ = await asyncio.to_thread(zh_g2p, clause)
-                        phonemes_list.append(ph)
-                else:
-                    phonemes_list = [phonemes]
-                for ph in phonemes_list:
-                    # Final safety: hard split if still too long
-                    ph_parts = [ph[i:i+MAX_PHONEME_LENGTH] for i in range(0, len(ph), MAX_PHONEME_LENGTH)]
-                    for p in ph_parts:
-                        samples, sample_rate = await asyncio.to_thread(
-                            zh_kokoro.create, p, voice, body.speed, is_phonemes=True
-                        )
-                        all_samples.append(samples)
+            _ensure_cuda(zh_kokoro)
+            try:
+                for sentence in sentences:
+                    phonemes, _ = await asyncio.to_thread(zh_g2p, sentence)
+                    # If phonemes too long, split original text at commas and re-run G2P
+                    if len(phonemes) > MAX_PHONEME_LENGTH:
+                        clauses = _split_clause(sentence)
+                        phonemes_list = []
+                        for clause in clauses:
+                            ph, _ = await asyncio.to_thread(zh_g2p, clause)
+                            phonemes_list.append(ph)
+                    else:
+                        phonemes_list = [phonemes]
+                    for ph in phonemes_list:
+                        # Final safety: hard split if still too long
+                        ph_parts = [ph[i:i+MAX_PHONEME_LENGTH] for i in range(0, len(ph), MAX_PHONEME_LENGTH)]
+                        for p in ph_parts:
+                            samples, sample_rate = await asyncio.to_thread(
+                                zh_kokoro.create, p, voice, body.speed, is_phonemes=True
+                            )
+                            all_samples.append(samples)
+            finally:
+                _release_vram(zh_kokoro)
         if all_samples:
             return np.concatenate(all_samples), sample_rate
         return np.array([], dtype=np.float32), 24000
@@ -184,23 +213,27 @@ async def _generate_samples(body: SpeechRequest, mode: str):
         sentences = _split_sentences(body.input)
         all_samples = []
         async with kokoro_lock:
-            for sentence in sentences:
-                phonemes, _ = await asyncio.to_thread(ja_g2p, sentence)
-                if len(phonemes) > MAX_PHONEME_LENGTH:
-                    clauses = _split_clause(sentence)
-                    phonemes_list = []
-                    for clause in clauses:
-                        ph, _ = await asyncio.to_thread(ja_g2p, clause)
-                        phonemes_list.append(ph)
-                else:
-                    phonemes_list = [phonemes]
-                for ph in phonemes_list:
-                    ph_parts = [ph[i:i+MAX_PHONEME_LENGTH] for i in range(0, len(ph), MAX_PHONEME_LENGTH)]
-                    for p in ph_parts:
-                        samples, sample_rate = await asyncio.to_thread(
-                            kokoro.create, p, body.voice, body.speed, is_phonemes=True
-                        )
-                        all_samples.append(samples)
+            _ensure_cuda(kokoro)
+            try:
+                for sentence in sentences:
+                    phonemes, _ = await asyncio.to_thread(ja_g2p, sentence)
+                    if len(phonemes) > MAX_PHONEME_LENGTH:
+                        clauses = _split_clause(sentence)
+                        phonemes_list = []
+                        for clause in clauses:
+                            ph, _ = await asyncio.to_thread(ja_g2p, clause)
+                            phonemes_list.append(ph)
+                    else:
+                        phonemes_list = [phonemes]
+                    for ph in phonemes_list:
+                        ph_parts = [ph[i:i+MAX_PHONEME_LENGTH] for i in range(0, len(ph), MAX_PHONEME_LENGTH)]
+                        for p in ph_parts:
+                            samples, sample_rate = await asyncio.to_thread(
+                                kokoro.create, p, body.voice, body.speed, is_phonemes=True
+                            )
+                            all_samples.append(samples)
+            finally:
+                _release_vram(kokoro)
         if all_samples:
             return np.concatenate(all_samples), sample_rate
         return np.array([], dtype=np.float32), 24000
@@ -208,11 +241,16 @@ async def _generate_samples(body: SpeechRequest, mode: str):
         sentences = _split_sentences(body.input)
         all_samples = []
         async with kokoro_lock:
-            for sentence in sentences:
-                samples, sample_rate = await asyncio.to_thread(
-                    kokoro.create, sentence, body.voice, body.speed
-                )
-                all_samples.append(samples)
+            _ensure_cuda(kokoro)
+            try:
+                for i, sentence in enumerate(sentences):
+                    with Timer(f"sentence[{i}] ({len(sentence)} chars)"):
+                        samples, sample_rate = await asyncio.to_thread(
+                            kokoro.create, sentence, body.voice, body.speed
+                        )
+                    all_samples.append(samples)
+            finally:
+                _release_vram(kokoro)
         if all_samples:
             return np.concatenate(all_samples), sample_rate
         return np.array([], dtype=np.float32), 24000
@@ -221,7 +259,8 @@ async def _generate_samples(body: SpeechRequest, mode: str):
 async def _full_response(body: SpeechRequest, fmt: str, content_type: str, mode: str) -> Response:
     start = time.time()
 
-    samples, sample_rate = await _generate_samples(body, mode)
+    with Timer(f"total generate ({mode}, speed={body.speed})"):
+        samples, sample_rate = await _generate_samples(body, mode)
 
     audio_bytes = encode_audio(samples, sample_rate, fmt)
     elapsed_ms = int((time.time() - start) * 1000)
@@ -253,27 +292,39 @@ async def _stream_response(body: SpeechRequest, fmt: str, content_type: str, mod
                 text = replace_english(body.input)
                 voice = _resolve_zh_voice(body.voice)
                 async with zh_lock:
-                    phonemes, _ = await asyncio.to_thread(zh_g2p, text)
-                    samples, sample_rate = await asyncio.to_thread(
-                        zh_kokoro.create, phonemes, voice, body.speed, is_phonemes=True
-                    )
-                    chunk_count = 1
-                    yield encode_audio(samples, sample_rate, fmt)
+                    _ensure_cuda(zh_kokoro)
+                    try:
+                        phonemes, _ = await asyncio.to_thread(zh_g2p, text)
+                        samples, sample_rate = await asyncio.to_thread(
+                            zh_kokoro.create, phonemes, voice, body.speed, is_phonemes=True
+                        )
+                        chunk_count = 1
+                        yield encode_audio(samples, sample_rate, fmt)
+                    finally:
+                        _release_vram(zh_kokoro)
             elif mode == "ja":
                 async with kokoro_lock:
-                    phonemes, _ = await asyncio.to_thread(ja_g2p, body.input)
-                    samples, sample_rate = await asyncio.to_thread(
-                        kokoro.create, phonemes, body.voice, body.speed, is_phonemes=True
-                    )
-                    chunk_count = 1
-                    yield encode_audio(samples, sample_rate, fmt)
+                    _ensure_cuda(kokoro)
+                    try:
+                        phonemes, _ = await asyncio.to_thread(ja_g2p, body.input)
+                        samples, sample_rate = await asyncio.to_thread(
+                            kokoro.create, phonemes, body.voice, body.speed, is_phonemes=True
+                        )
+                        chunk_count = 1
+                        yield encode_audio(samples, sample_rate, fmt)
+                    finally:
+                        _release_vram(kokoro)
             else:
                 async with kokoro_lock:
-                    async for samples, sample_rate in kokoro.create_stream(
-                        body.input, body.voice, body.speed
-                    ):
-                        chunk_count += 1
-                        yield encode_audio(samples, sample_rate, fmt)
+                    _ensure_cuda(kokoro)
+                    try:
+                        async for samples, sample_rate in kokoro.create_stream(
+                            body.input, body.voice, body.speed
+                        ):
+                            chunk_count += 1
+                            yield encode_audio(samples, sample_rate, fmt)
+                    finally:
+                        _release_vram(kokoro)
             elapsed_ms = int((time.time() - start) * 1000)
             logger.info(f"Streamed {chunk_count} chunks in {elapsed_ms}ms ({mode}, true-stream {fmt})")
 

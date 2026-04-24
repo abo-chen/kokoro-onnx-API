@@ -14,6 +14,7 @@ from kokoro_onnx import Kokoro
 from app.config import settings
 from app.routers import models as models_router
 from app.routers import speech as speech_router
+from app.timing import Timer
 
 
 logging.basicConfig(
@@ -30,6 +31,18 @@ zh_lock: asyncio.Lock | None = None
 zh_kokoro: Kokoro | None = None
 zh_g2p = None
 
+# CUDA provider config — shared across sessions, used for VRAM release/reload
+CUDA_PROVIDERS = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+CUDA_PROVIDER_OPTIONS = [
+    {
+        "device_id": "0",
+        "gpu_mem_limit": "3221225472",  # 3GB cap (4GB GPU)
+        "arena_extend_strategy": "kSameAsRequested",
+        "cudnn_conv_algo_search": "HEURISTIC",
+    },
+    {},
+]
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,35 +50,27 @@ async def lifespan(app: FastAPI):
 
     # Load primary (English/multilingual) model
     logger.info(f"Loading model from {settings.MODEL_PATH}")
-    t0 = time.time()
 
-    # Configure session options to reduce memory usage
     so = rt.SessionOptions()
     so.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_ALL
 
-    # CUDA provider options to control arena growth and reduce VRAM accumulation
-    providers = [
-        ("CUDAExecutionProvider", {
-            "device_id": "0",
-            "gpu_mem_limit": "2147483648",  # 2GB hard cap on arena
-            "arena_extend_strategy": "kSameAsRequested",  # allocate only what's needed
-            "cudnn_conv_algo_search": "HEURISTIC",  # avoid exhaustive workspace allocation
-        }),
-        "CPUExecutionProvider",
-    ]
-    session = rt.InferenceSession(settings.MODEL_PATH, sess_options=so, providers=providers)
+    with Timer("primary InferenceSession"):
+        session = rt.InferenceSession(
+            settings.MODEL_PATH, sess_options=so,
+            providers=CUDA_PROVIDERS, provider_options=CUDA_PROVIDER_OPTIONS,
+        )
     logger.info(f"ONNX session providers: {session.get_providers()}")
     kokoro_instance = Kokoro.from_session(session, settings.VOICES_PATH, vocab_config="models/config.json")
-    logger.info(f"Model loaded in {time.time() - t0:.1f}s, voices: {kokoro_instance.get_voices()}")
+    logger.info(f"Model loaded, voices: {kokoro_instance.get_voices()}")
 
     speech_router.set_kokoro(kokoro_instance, kokoro_lock)
+    speech_router.set_cuda_config(CUDA_PROVIDERS, CUDA_PROVIDER_OPTIONS)
 
     # Warmup: trigger CUDA kernel compilation
     if "CUDAExecutionProvider" in session.get_providers():
         logger.info("Warming up GPU...")
-        t1 = time.time()
-        kokoro_instance.create("Warmup.", voice="af_heart", speed=1.0)
-        logger.info(f"Warmup done in {time.time() - t1:.1f}s")
+        with Timer("primary warmup"):
+            kokoro_instance.create("Warmup.", voice="af_heart", speed=1.0)
     else:
         logger.info("GPU not available, running in CPU mode")
 
@@ -80,20 +85,22 @@ async def lifespan(app: FastAPI):
                 from misaki import zh
 
                 logger.info(f"Loading Chinese model from {settings.ZH_MODEL_PATH}")
-                t2 = time.time()
-                zh_session = rt.InferenceSession(settings.ZH_MODEL_PATH, providers=providers)
+                with Timer("zh InferenceSession"):
+                    zh_session = rt.InferenceSession(
+                        settings.ZH_MODEL_PATH,
+                        providers=CUDA_PROVIDERS, provider_options=CUDA_PROVIDER_OPTIONS,
+                    )
                 zh_kokoro = Kokoro.from_session(zh_session, settings.ZH_VOICES_PATH, vocab_config=settings.ZH_VOCAB_CONFIG)
                 zh_g2p = zh.ZHG2P(version="1.1")
                 zh_lock = asyncio.Lock()
-                logger.info(f"Chinese model loaded in {time.time() - t2:.1f}s, voices: {zh_kokoro.get_voices()}")
+                logger.info(f"Chinese model loaded, voices: {zh_kokoro.get_voices()}")
 
                 # Warmup Chinese model
                 if "CUDAExecutionProvider" in zh_session.get_providers():
                     logger.info("Warming up Chinese model GPU...")
-                    t3 = time.time()
-                    phonemes, _ = zh_g2p("测试")
-                    zh_kokoro.create(phonemes, voice="zf_001", speed=1.0, is_phonemes=True)
-                    logger.info(f"Chinese warmup done in {time.time() - t3:.1f}s")
+                    with Timer("zh warmup"):
+                        phonemes, _ = zh_g2p("测试")
+                        zh_kokoro.create(phonemes, voice="zf_001", speed=1.0, is_phonemes=True)
         except Exception as e:
             logger.warning(f"Failed to load Chinese model: {e}")
             zh_kokoro = None

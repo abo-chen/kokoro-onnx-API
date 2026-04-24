@@ -17,5 +17,8 @@ class Settings(BaseSettings):
     ZH_VOCAB_CONFIG: str = "models/config.json"
     ZH_ENABLED: bool = True
 
+    # Debug: log timing and VRAM at key points (set via .env)
+    DEBUG_TIMING: bool = False
+
 
 settings = Settings()

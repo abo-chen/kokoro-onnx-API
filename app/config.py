@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     ZH_VOCAB_CONFIG: str = "models/config.json"
     ZH_ENABLED: bool = True
 
+    # GPU VRAM limit in MB (default 2048 = 2GB)
+    GPU_MEM_LIMIT_MB: int = 2048
+
     # Debug: log timing and VRAM at key points (set via .env)
     DEBUG_TIMING: bool = False
 

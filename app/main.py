@@ -31,22 +31,30 @@ zh_lock: asyncio.Lock | None = None
 zh_kokoro: Kokoro | None = None
 zh_g2p = None
 
-# CUDA provider config — shared across sessions, used for VRAM release/reload
+# CUDA provider config — built dynamically in lifespan from settings.GPU_MEM_LIMIT_MB
 CUDA_PROVIDERS = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-CUDA_PROVIDER_OPTIONS = [
-    {
-        "device_id": "0",
-        "gpu_mem_limit": "3221225472",  # 3GB cap (4GB GPU)
-        "arena_extend_strategy": "kSameAsRequested",
-        "cudnn_conv_algo_search": "HEURISTIC",
-    },
-    {},
-]
+CUDA_PROVIDER_OPTIONS: list[dict] = []
+
+
+def _build_cuda_options() -> list[dict]:
+    mem_limit_bytes = str(settings.GPU_MEM_LIMIT_MB * 1024 * 1024)
+    return [
+        {
+            "device_id": "0",
+            "gpu_mem_limit": mem_limit_bytes,
+            "arena_extend_strategy": "kSameAsRequested",
+            "cudnn_conv_algo_search": "HEURISTIC",
+        },
+        {},
+    ]
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global kokoro_instance, zh_kokoro, zh_g2p, zh_lock
+    global kokoro_instance, zh_kokoro, zh_g2p, zh_lock, CUDA_PROVIDER_OPTIONS
+
+    CUDA_PROVIDER_OPTIONS = _build_cuda_options()
+    logger.info(f"CUDA gpu_mem_limit: {settings.GPU_MEM_LIMIT_MB}MB")
 
     # Load primary (English/multilingual) model
     logger.info(f"Loading model from {settings.MODEL_PATH}")

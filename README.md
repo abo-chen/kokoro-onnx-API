@@ -179,6 +179,8 @@ Environment variables (`.env` file):
 | `ZH_MODEL_PATH` | `models/kokoro-v1.1-zh.onnx` | Path to Chinese ONNX model |
 | `ZH_VOICES_PATH` | `voices/voices-v1.1-zh.bin` | Path to Chinese voices file |
 | `ZH_VOCAB_CONFIG` | `models/config.json` | Path to Chinese vocab config |
+| `GPU_MEM_LIMIT_MB` | `2048` | CUDA arena hard cap in MB (2GB) |
+| `DEBUG_TIMING` | `false` | Log timing and VRAM at key points |
 
 ## Available Voices
 
@@ -216,25 +218,32 @@ The voices list endpoint only returns Chinese voices (`zf_*` / `zm_*`) from this
 
 ## GPU Memory (VRAM) Behavior
 
-ONNX Runtime's CUDA allocator uses an arena (memory pool) that grows monotonically — memory is never returned to the GPU once allocated. This project configures the following CUDA provider options to mitigate unbounded VRAM growth:
+ONNX Runtime's CUDA allocator uses a BFC arena (memory pool) that grows monotonically — memory is never returned to the GPU once allocated. This causes VRAM accumulation across requests, eventually leading to OOM errors with long text or low speed values.
 
-- `arena_extend_strategy: kSameAsRequested` — allocate only what's needed instead of doubling (default `kNextPowerOfTwo`)
-- `cudnn_conv_algo_search: HEURISTIC` — avoid exhaustive algorithm benchmarking that allocates large temporary workspaces
-- `gpu_mem_limit: 2GB` — hard cap on arena allocation
+### VRAM Release Mechanism
 
-With these settings, VRAM stabilizes within the same language after repeated generation:
+After each TTS request, the CUDA execution provider is unloaded via `session.set_providers(["CPUExecutionProvider"])`, releasing all GPU memory. Before the next request, it is reloaded via `session.set_providers([cuda_config])`. This adds ~0.3–0.5s overhead per request but ensures clean VRAM state with zero accumulation.
 
-| Scenario | Stable VRAM |
-|----------|-------------|
-| Baseline (idle) | ~1300 MB |
-| English (97s audio, repeated) | ~2013 MB |
-| Chinese (97s audio, repeated) | ~2300 MB |
-| Japanese (82s audio, repeated) | ~2314 MB |
-| Switching between languages | up to ~4 GB |
+Within a single request, text is split into sentences and processed sequentially. The arena reuses memory blocks between sentences, so peak VRAM is bounded by the largest single sentence rather than the total text length.
 
-Short text generation stays near baseline with minimal VRAM increase.
+### CUDA Provider Options
 
-Japanese uses G2P (text → phonemes → audio) with the primary model, while Chinese uses a separate model. Japanese phoneme sequences are longer than raw text, resulting in higher per-second VRAM usage compared to English and Chinese.
+- `arena_extend_strategy: kSameAsRequested` — allocate only what's needed
+- `cudnn_conv_algo_search: HEURISTIC` — avoid exhaustive workspace allocation
+- `gpu_mem_limit` — arena hard cap, configurable via `GPU_MEM_LIMIT_MB` (default 2048 = 2GB)
+
+### DEBUG_TIMING
+
+Set `DEBUG_TIMING=true` in `.env` to log timing and VRAM usage at key points (model load, CUDA reload/release, per-sentence inference). Useful for benchmarking on different hardware. Zero overhead when disabled.
+
+```
+[TIMING] cuda reload START | VRAM: 312 MB
+[TIMING] cuda reload DONE | 496 ms | VRAM: 1024 MB
+[TIMING] sentence[0] (87 chars) START | VRAM: 1024 MB
+[TIMING] sentence[0] (87 chars) DONE | 420 ms | VRAM: 1150 MB
+[TIMING] cuda release START | VRAM: 1150 MB
+[TIMING] cuda release DONE | 12 ms | VRAM: 312 MB
+```
 
 > **Note:** VRAM values are for reference only and may vary by GPU, driver, and input content.
 
@@ -245,6 +254,10 @@ Japanese uses G2P (text → phonemes → audio) with the primary model, while Ch
 - **Platform:** x86_64 (AMD64/Intel 64). ARM platforms (e.g. Apple Silicon, Raspberry Pi) are not currently supported.
 
 ## Changelog
+
+### VRAM Release via set_providers
+
+ONNX Runtime's BFC arena never releases GPU memory. After multiple requests, VRAM accumulates until OOM. Fixed by unloading the CUDA execution provider after each request (`session.set_providers(["CPUExecutionProvider"])`) and reloading before the next. Also added `DEBUG_TIMING` env toggle for timing/VRAM profiling.
 
 ### Speed < 1.0 Fix
 

@@ -12,8 +12,9 @@ app/
   g2p.py           # Chinese mixed CN/EN G2P (dict → abbreviations → g2p_en fallback)
   audio.py         # Audio encoding (PyAV: mp3/wav/flac/aac/pcm)
   auth.py          # Optional Bearer token auth middleware
+  timing.py        # DEBUG_TIMING: Timer context manager + VRAM logging
   routers/
-    speech.py      # POST /v1/audio/speech
+    speech.py      # POST /v1/audio/speech, VRAM release via set_providers
     models.py      # GET /v1/models, GET /v1/audio/voices
 models/            # ONNX model files (~962MB)
 voices/            # Voice bin files (~79MB)
@@ -32,7 +33,8 @@ static/            # Demo page served at /demo
 
 - **Speed < 1.0 bug**: The kokoro-onnx library (v0.5.0) casts speed to `np.int32` for `input_ids` format models, making only 0.5→0, 1.0→1, 2.0→2 work. Patched in Dockerfile: `sed -i 's/dtype=np.int32)/dtype=np.float32)/'`. The HuggingFace Chinese model also fixes this at the ONNX level.
 - **Speed range**: 0.5 to 2.0. Values outside this range cause runtime errors.
-- **VRAM**: ONNX CUDA arena grows monotonically. Mitigated with `arena_extend_strategy: kSameAsRequested`, `gpu_mem_limit: 2GB`.
+- **VRAM**: ONNX BFC arena grows monotonically and never releases memory. After each TTS request, CUDA provider is unloaded via `session.set_providers(["CPUExecutionProvider"])` to release VRAM, then reloaded before the next request. Adds ~0.3-0.5s overhead per request. `gpu_mem_limit` configurable via `GPU_MEM_LIMIT_MB` env (default 2048=2GB). Text is split into sentences so peak VRAM is bounded by the largest single sentence.
+- **DEBUG_TIMING**: Env toggle (`DEBUG_TIMING=true`) logs timing + VRAM at key points (model load, CUDA reload/release, per-sentence inference). `app/timing.py`.
 
 ## Docker
 
@@ -51,7 +53,7 @@ static/            # Demo page served at /demo
 
 ## Configuration (.env)
 
-Key variables: `API_KEY`, `AUTH_ENABLED`, `MODEL_PATH`, `VOICES_PATH`, `HOST`, `PORT`, `ZH_ENABLED`, `ZH_MODEL_PATH`, `ZH_VOICES_PATH`, `ZH_VOCAB_CONFIG`. Defaults in `app/config.py`.
+Key variables: `API_KEY`, `AUTH_ENABLED`, `MODEL_PATH`, `VOICES_PATH`, `HOST`, `PORT`, `ZH_ENABLED`, `ZH_MODEL_PATH`, `ZH_VOICES_PATH`, `ZH_VOCAB_CONFIG`, `GPU_MEM_LIMIT_MB`, `DEBUG_TIMING`. Defaults in `app/config.py`.
 
 ## Development
 

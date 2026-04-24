@@ -160,7 +160,7 @@ const LANG_PRESETS = {
 // Speed slider
 const speedRange = document.getElementById('speedRange');
 const speedVal = document.getElementById('speedVal');
-speedRange.addEventListener('input', () => { speedVal.textContent = parseFloat(speedRange.value).toFixed(1) + 'x'; });
+speedRange.addEventListener('input', () => { speedVal.textContent = parseFloat(speedRange.value).toFixed(2) + 'x'; });
 
 // Language change -> update voices + presets
 document.getElementById('langSelect').addEventListener('change', () => {

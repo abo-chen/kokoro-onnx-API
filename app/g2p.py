@@ -117,6 +117,34 @@ def _spell_letters(word: str) -> str:
     return "".join(LETTER_MAP.get(ch, ch) for ch in word.upper())
 
 
+def _normalize_percent(text: str) -> str:
+    """Convert percentage patterns to spoken Chinese: 99.9% → 百分之九十九点九."""
+    DIGIT = "零一二三四五六七八九"
+
+    def _num_to_zh(s: str) -> str:
+        if "." in s:
+            int_part, dec_part = s.split(".", 1)
+            int_zh = _num_to_zh(int_part)
+            dec_zh = "".join(DIGIT[int(d)] for d in dec_part)
+            return int_zh + "点" + dec_zh
+        n = int(s)
+        if n == 0:
+            return "零"
+        units = ["", "十", "百", "千", "万"]
+        result = ""
+        for i, ch in enumerate(reversed(str(n))):
+            if ch != "0":
+                result = DIGIT[int(ch)] + units[i] + result
+            elif result:
+                result = "零" + result
+        return result
+
+    def _replace(m):
+        return "百分之" + _num_to_zh(m.group(1))
+
+    return re.sub(r"(\d+\.?\d*)\s*%", _replace, text)
+
+
 def replace_english(text: str) -> str:
     """Replace English words in text with Chinese phonetic equivalents.
 

@@ -147,7 +147,7 @@ curl -X POST http://localhost:5023/v1/audio/speech \
   --output french.mp3
 ```
 
-> TN is not applied to Chinese or Japanese modes — those have their own G2P pipelines.
+> TN is not applied to Chinese or Japanese modes — those have their own G2P pipelines. Chinese mode uses a lightweight regex preprocessor for percentage normalization (`99.9%` → `百分之九十九点九`).
 
 ## Japanese TTS
 
@@ -164,7 +164,8 @@ curl -X POST http://localhost:5023/v1/audio/speech \
 
 When the Chinese model is enabled (`ZH_ENABLED=true`), the API automatically detects Chinese characters in the input text and routes to the Chinese model with a three-level G2P strategy for handling embedded English words:
 
-1. **High-frequency dictionary** - exact match for known tech terms and common words
+1. **Percentage normalization** - regex preprocessor converts `99.9%` → `百分之九十九点九`, `15.8%` → `百分之十五点八` before G2P
+2. **High-frequency dictionary** - exact match for known tech terms and common words
    - `GitHub` → 给特哈布, `Docker` → 多克, `bug` → 巴格, `Python` → 派森
 2. **Uppercase abbreviations** - letter-by-letter spelling (e.g. `API`, `GPU`, `SSH`)
 3. **g2p_en fallback** - ARPABET phoneme prediction mapped to Chinese characters for unknown English words

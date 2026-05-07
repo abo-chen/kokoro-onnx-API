@@ -29,6 +29,7 @@ static/            # Demo page served at /demo
 - **Chinese model** (`kokoro-v1.1-zh.onnx`): Mandarin only. Input format: `input_ids`. Sourced from HuggingFace `onnx-community/Kokoro-82M-v1.1-zh-ONNX` (not the GitHub releases version — the releases version has a speed bug).
 - Chinese model has its own voice set (`zf_001`-`zf_099`, `zm_009`-`zm_100`). Built-in EN voices (`af_maple`, `af_sol`, `bf_vale`) are hidden from the list endpoint.
 - Voice routing: `zf_*/zm_*` prefix → Chinese model, Chinese characters in input → Chinese model, `jf_*/jm_*` → primary model with Japanese G2P, everything else → primary model.
+- Chinese percentage normalization: regex-based preprocessor in `app/g2p.py` (`_normalize_percent`) converts `99.9%` → `百分之九十九点九` before G2P. Handles decimals and integers.
 
 ## Text Normalization (TN)
 

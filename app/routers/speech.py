@@ -8,7 +8,7 @@ from fastapi.responses import Response, StreamingResponse
 
 from app.audio import encode_audio, get_content_type, needs_full_audio
 from app.auth import verify_api_key
-from app.g2p import contains_chinese, replace_english
+from app.g2p import contains_chinese, replace_english, _normalize_percent
 from app.models import SpeechRequest
 from app.tn import normalize_text
 from app.timing import Timer
@@ -179,7 +179,7 @@ MAX_PHONEME_LENGTH = 500
 async def _generate_samples(body: SpeechRequest, mode: str):
     """Generate audio samples based on mode. Returns (samples, sample_rate)."""
     if mode == "zh":
-        text = replace_english(body.input)
+        text = _normalize_percent(replace_english(body.input))
         voice = _resolve_zh_voice(body.voice)
         sentences = _split_sentences(text)
         all_samples = []
@@ -291,7 +291,7 @@ async def _stream_response(body: SpeechRequest, fmt: str, content_type: str, mod
             start = time.time()
             chunk_count = 0
             if mode == "zh":
-                text = replace_english(body.input)
+                text = _normalize_percent(replace_english(body.input))
                 voice = _resolve_zh_voice(body.voice)
                 async with zh_lock:
                     _ensure_cuda(zh_kokoro)

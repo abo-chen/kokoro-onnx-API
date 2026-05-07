@@ -95,6 +95,7 @@ curl -X POST http://localhost:5023/v1/audio/speech \
 | `response_format` | string | `"mp3"` | `mp3`, `wav`, `flac`, `aac`, `pcm` |
 | `speed` | float | `1.0` | Speed (0.5 - 2.0) |
 | `stream` | bool | `false` | Enable streaming response |
+| `language` | string | `null` | `"en"` or `"fr"` — override TN language (auto-detected if omitted) |
 
 ### GET /v1/models
 
@@ -124,6 +125,29 @@ curl http://localhost:5023/v1/audio/voices
   ]
 }
 ```
+
+## Text Normalization (TN)
+
+English and French text is preprocessed by [nemo_text_processing](https://github.com/NVIDIA/NeMo-text-processing) (WFST-based, deterministic) before synthesis. This normalizes:
+
+- **Numbers:** `1,000` → `one thousand`, `2024` → `twenty twenty four`, `3.14` → `three point one four`
+- **Symbols:** `C++` → `C plus plus`, `C#` → `c sharp`, `Node.js` → `node dot js`, `&` → `and`
+- **Abbreviations:** `Dr. Smith` → `doctor Smith`, `123 Main St.` → `one twenty three Main Street`
+- **Electronic text:** `user@email.com` → `user at email dot com`, URLs expanded
+- **Currency:** `$3.14` → `three dollars fourteen cents`, `1 500 euros` → `mille cinq cents euros`
+- **Percentages:** `99.5%` → `ninety nine point five percent`
+
+Language is auto-detected (French by accent characters, English otherwise). Set `"language": "fr"` to force French TN.
+
+```bash
+curl -X POST http://localhost:5023/v1/audio/speech \
+  -H "Authorization: Bearer sk-kokoro" \
+  -H "Content-Type: application/json" \
+  -d '{"input": "J'\''ai 1 500 euros. Le résultat est 99,5%.", "voice": "ff_siwis", "language": "fr"}' \
+  --output french.mp3
+```
+
+> TN is not applied to Chinese or Japanese modes — those have their own G2P pipelines.
 
 ## Japanese TTS
 

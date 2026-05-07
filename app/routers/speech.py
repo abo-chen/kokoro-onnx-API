@@ -10,6 +10,7 @@ from app.audio import encode_audio, get_content_type, needs_full_audio
 from app.auth import verify_api_key
 from app.g2p import contains_chinese, replace_english
 from app.models import SpeechRequest
+from app.tn import normalize_text
 from app.timing import Timer
 
 logger = logging.getLogger(__name__)
@@ -238,7 +239,8 @@ async def _generate_samples(body: SpeechRequest, mode: str):
             return np.concatenate(all_samples), sample_rate
         return np.array([], dtype=np.float32), 24000
     else:
-        sentences = _split_sentences(body.input)
+        text = normalize_text(body.input, body.language)
+        sentences = _split_sentences(text)
         all_samples = []
         async with kokoro_lock:
             _ensure_cuda(kokoro)
@@ -318,8 +320,9 @@ async def _stream_response(body: SpeechRequest, fmt: str, content_type: str, mod
                 async with kokoro_lock:
                     _ensure_cuda(kokoro)
                     try:
+                        tn_text = normalize_text(body.input, body.language)
                         async for samples, sample_rate in kokoro.create_stream(
-                            body.input, body.voice, body.speed
+                            tn_text, body.voice, body.speed
                         ):
                             chunk_count += 1
                             yield encode_audio(samples, sample_rate, fmt)

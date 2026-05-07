@@ -185,6 +185,14 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Failed to load Japanese G2P: {e}")
     models_router.set_zh_kokoro(zh_kokoro)
 
+    # Load text normalizers (English + French)
+    try:
+        from app.tn import init_normalizer
+        with Timer("text normalizer"):
+            init_normalizer()
+    except Exception as e:
+        logger.warning(f"Failed to load text normalizer: {e}")
+
     yield
 
     kokoro_instance = None

@@ -10,6 +10,7 @@ app/
   config.py        # Settings from .env (pydantic-settings)
   models.py        # Pydantic request/response models
   g2p.py           # Chinese mixed CN/EN G2P (dict → abbreviations → g2p_en fallback)
+  tn.py            # English/French text normalization (nemo_text_processing WFST)
   audio.py         # Audio encoding (PyAV: mp3/wav/flac/aac/pcm)
   auth.py          # Optional Bearer token auth middleware
   timing.py        # DEBUG_TIMING: Timer context manager + VRAM logging
@@ -28,6 +29,20 @@ static/            # Demo page served at /demo
 - **Chinese model** (`kokoro-v1.1-zh.onnx`): Mandarin only. Input format: `input_ids`. Sourced from HuggingFace `onnx-community/Kokoro-82M-v1.1-zh-ONNX` (not the GitHub releases version — the releases version has a speed bug).
 - Chinese model has its own voice set (`zf_001`-`zf_099`, `zm_009`-`zm_100`). Built-in EN voices (`af_maple`, `af_sol`, `bf_vale`) are hidden from the list endpoint.
 - Voice routing: `zf_*/zm_*` prefix → Chinese model, Chinese characters in input → Chinese model, `jf_*/jm_*` → primary model with Japanese G2P, everything else → primary model.
+
+## Text Normalization (TN)
+
+English and French text is preprocessed by [nemo_text_processing](https://github.com/NVIDIA/NeMo-text-processing) before G2P. This handles:
+- Numbers: `1,000` → `one thousand`, `2024` → `twenty twenty four`
+- Symbols: `C++` → `C plus plus`, `C#` → `c sharp`, `Node.js` → `node dot js`
+- Abbreviations: `Dr.` → `doctor`, `St.` → `Street`
+- Electronic text: `user@email.com` → `user at email dot com`, URLs expanded
+- Currency: `$3.14` → `three dollars fourteen cents`
+- French-specific: `1 500 euros` → `mille cinq cents euros`, `99,5%` → `quatre-vingt-dix-neuf virgule cinq pour cent`
+
+Language detection: auto-detects French by accent characters (é, è, ç, etc.), otherwise defaults to English. Can be overridden with `language` parameter (`"en"` or `"fr"`). TN is only applied to the default (non-Chinese, non-Japanese) mode.
+
+TN adds ~10s to startup (FST grammar compilation for en+fr), ~50MB to Docker image, and microseconds per request at runtime. No GPU usage.
 
 ## Known Issues & Patches
 

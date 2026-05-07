@@ -10,6 +10,7 @@ class SpeechRequest(BaseModel):
     response_format: Literal["mp3", "wav", "flac", "aac", "pcm"] = "mp3"
     speed: float = Field(default=1.0, ge=0.5, le=2.0)
     stream: bool = False
+    language: Literal["en", "fr"] | None = None
 
 
 class ModelObject(BaseModel):

@@ -16,6 +16,7 @@ dependencies = [
     "misaki-fork[ja]",
     "unidic",
     "g2p_en",
+    "nemo_text_processing",
 ]
 
 [project.optional-dependencies]

@@ -1,13 +1,10 @@
 """Text normalization for TTS using nemo_text_processing."""
 
 import logging
-import re
 
 logger = logging.getLogger(__name__)
 
 _normalizers: dict[str, object] = {}
-
-_FRENCH_CHARS = re.compile(r"[éèêëàâùûüçîïôœæÉÈÊËÀÂÙÛÜÇÎÏÔŒÆ]")
 
 
 def init_normalizer():
@@ -26,13 +23,18 @@ def init_normalizer():
             logger.warning(f"Text normalizer ({lang}) not available: {e}")
 
 
+# Voice prefix → TN language mapping
+_VOICE_LANG = {
+    "af": "en", "am": "en",
+    "bf": "en", "bm": "en",
+    "ff": "fr", "fm": "fr",
+}
+
+
 def normalize_text(text: str, lang: str | None = None) -> str:
     """Normalize text for TTS. Auto-detects language if not specified."""
     if not _normalizers:
         return text
-
-    if lang is None:
-        lang = "fr" if _FRENCH_CHARS.search(text) else "en"
 
     normalizer = _normalizers.get(lang)
     if normalizer is None:

@@ -41,7 +41,7 @@ English and French text is preprocessed by [nemo_text_processing](https://github
 - Currency: `$3.14` → `three dollars fourteen cents`
 - French-specific: `1 500 euros` → `mille cinq cents euros`, `99,5%` → `quatre-vingt-dix-neuf virgule cinq pour cent`
 
-Language detection: auto-detects French by accent characters (é, è, ç, etc.), otherwise defaults to English. Can be overridden with `language` parameter (`"en"` or `"fr"`). TN is only applied to the default (non-Chinese, non-Japanese) mode.
+Language detection: TN language is inferred from voice ID prefix (`af`/`am`/`bf`/`bm` → English, `ff`/`fm` → French). No need to specify `language` parameter — the voice determines the language, same as Edge TTS. The `language` parameter is deprecated and ignored. TN is only applied to the default (non-Chinese, non-Japanese) mode.
 
 TN adds ~10s to startup (FST grammar compilation for en+fr), ~50MB to Docker image, and microseconds per request at runtime. No GPU usage.
 

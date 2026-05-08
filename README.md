@@ -95,7 +95,7 @@ curl -X POST http://localhost:5023/v1/audio/speech \
 | `response_format` | string | `"mp3"` | `mp3`, `wav`, `flac`, `aac`, `pcm` |
 | `speed` | float | `1.0` | Speed (0.5 - 2.0) |
 | `stream` | bool | `false` | Enable streaming response |
-| `language` | string | `null` | `"en"` or `"fr"` — override TN language (auto-detected if omitted) |
+| `language` | string | `null` | Deprecated — TN language is inferred from voice (`af`/`am`/`bf`/`bm` → English, `ff`/`fm` → French) |
 
 ### GET /v1/models
 
@@ -137,7 +137,7 @@ English and French text is preprocessed by [nemo_text_processing](https://github
 - **Currency:** `$3.14` → `three dollars fourteen cents`, `1 500 euros` → `mille cinq cents euros`
 - **Percentages:** `99.5%` → `ninety nine point five percent`
 
-Language is auto-detected (French by accent characters, English otherwise). Set `"language": "fr"` to force French TN.
+Language is inferred from the voice ID prefix (`af`/`am`/`bf`/`bm` → English, `ff`/`fm` → French) — no need to specify a language parameter, similar to how Edge TTS works.
 
 ```bash
 curl -X POST http://localhost:5023/v1/audio/speech \

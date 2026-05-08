@@ -95,7 +95,7 @@ curl -X POST http://localhost:5023/v1/audio/speech \
 | `response_format` | string | `"mp3"` | `mp3`、`wav`、`flac`、`aac`、`pcm` |
 | `speed` | float | `1.0` | 语速（0.5 - 2.0） |
 | `stream` | bool | `false` | 启用流式响应 |
-| `language` | string | `null` | `"en"` 或 `"fr"` — 指定 TN 语言（不传则自动检测） |
+| `language` | string | `null` | 已弃用 — TN 语言由音色自动推断（`af`/`am`/`bf`/`bm` → 英语，`ff`/`fm` → 法语） |
 
 ### GET /v1/models
 
@@ -137,7 +137,7 @@ curl http://localhost:5023/v1/audio/voices
 - **货币：** `$3.14` → `three dollars fourteen cents`，`1 500 euros` → `mille cinq cents euros`
 - **百分比：** `99.5%` → `ninety nine point five percent`
 
-语言自动检测（法语通过重音字符识别，否则默认英语）。设置 `"language": "fr"` 强制使用法语 TN。
+语言由音色 ID 前缀自动推断（`af`/`am`/`bf`/`bm` → 英语，`ff`/`fm` → 法语），无需指定语言参数，与 Edge TTS 行为一致。
 
 ```bash
 curl -X POST http://localhost:5023/v1/audio/speech \

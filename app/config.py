@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     # GPU VRAM limit in MB (default 2048 = 2GB)
     GPU_MEM_LIMIT_MB: int = 2048
 
+    # Max chars per TTS chunk. Auto-derived from GPU_MEM_LIMIT_MB if not set.
+    # Set manually to override: e.g. SPLIT_MAX_CHARS=300
+    SPLIT_MAX_CHARS: int = 0
+
+    # Accumulated chars before mid-request CUDA release (default mode).
+    # Auto-derived from GPU_MEM_LIMIT_MB if not set.
+    SPLIT_BATCH_CHARS: int = 0
+
     # Debug: log timing and VRAM at key points (set via .env)
     DEBUG_TIMING: bool = False
 

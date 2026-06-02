@@ -17,6 +17,7 @@ dependencies = [
     "unidic",
     "g2p_en",
     "nemo_text_processing",
+    "spacy",
 ]
 
 [project.optional-dependencies]

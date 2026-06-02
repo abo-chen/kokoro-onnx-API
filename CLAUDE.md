@@ -11,6 +11,7 @@ app/
   models.py        # Pydantic request/response models
   g2p.py           # Chinese mixed CN/EN G2P (dict → abbreviations → g2p_en fallback)
   tn.py            # English/French text normalization (nemo_text_processing WFST)
+  split.py         # Sentence splitting (spaCy sentencizer for en/fr, regex fallback for zh/ja)
   audio.py         # Audio encoding (PyAV: mp3/wav/flac/aac/pcm)
   auth.py          # Optional Bearer token auth middleware
   timing.py        # DEBUG_TIMING: Timer context manager + VRAM logging
@@ -45,11 +46,31 @@ Language detection: TN language is inferred from voice ID prefix (`af`/`am`/`bf`
 
 TN adds ~10s to startup (FST grammar compilation for en+fr), ~50MB to Docker image, and microseconds per request at runtime. No GPU usage.
 
+## Sentence Splitting
+
+Long text is split into sentences before TTS to bound peak VRAM. The splitting strategy varies by language:
+
+- **English/French (default mode):** [spaCy](https://spacy.io/) sentencizer on blank models (`spacy.blank("en")` / `spacy.blank("fr")` + sentencizer pipe). Handles abbreviations, Roman numerals, decimal numbers, ellipsis — much smarter than simple regex. Runs after TN, so most abbreviation periods are already resolved.
+- **Chinese/Japanese:** Regex fallback (`(?<=[。！？.!?\n])`) — CJK punctuation is unambiguous, no need for NLP.
+
+After splitting, short sentences are merged up to `max_chars` (auto-derived from VRAM budget) for better prosodic continuity.
+
+### Mid-request VRAM release
+
+ONNX BFC arena accumulates VRAM across sentences within a single request and never shrinks. To bound peak VRAM for long text, CUDA is released and reloaded mid-request when accumulated chars/phonemes exceed a threshold:
+
+- **default mode:** tracks accumulated chars, releases at `batch_chars` threshold (~2.2 MB/char)
+- **zh/ja mode:** tracks accumulated phonemes, releases at `batch_phonemes` threshold (Chinese chars ~4x denser than English)
+
+Both thresholds are auto-derived from `GPU_MEM_LIMIT_MB`. Each mid-release adds ~0.5s overhead but keeps VRAM within budget regardless of total text length. Manual override via `SPLIT_MAX_CHARS` / `SPLIT_BATCH_CHARS` env.
+
+Startup overhead: ~1.2s for en+fr. No model download needed. `app/split.py`.
+
 ## Known Issues & Patches
 
 - **Speed < 1.0 bug**: The kokoro-onnx library (v0.5.0) casts speed to `np.int32` for `input_ids` format models, making only 0.5→0, 1.0→1, 2.0→2 work. Patched in Dockerfile: `sed -i 's/dtype=np.int32)/dtype=np.float32)/'`. The HuggingFace Chinese model also fixes this at the ONNX level.
 - **Speed range**: 0.5 to 2.0. Values outside this range cause runtime errors.
-- **VRAM**: ONNX BFC arena grows monotonically and never releases memory. After each TTS request, CUDA provider is unloaded via `session.set_providers(["CPUExecutionProvider"])` to release VRAM, then reloaded before the next request. Adds ~0.3-0.5s overhead per request. `gpu_mem_limit` configurable via `GPU_MEM_LIMIT_MB` env (default 2048=2GB). Text is split into sentences so peak VRAM is bounded by the largest single sentence.
+- **VRAM**: ONNX BFC arena grows monotonically and never releases memory. After each TTS request, CUDA provider is unloaded via `session.set_providers(["CPUExecutionProvider"])` to release VRAM, then reloaded before the next request. Adds ~0.3-0.5s overhead per request. `gpu_mem_limit` configurable via `GPU_MEM_LIMIT_MB` env (default 2048=2GB). For long text, mid-request CUDA release bounds arena accumulation (see Sentence Splitting section).
 - **DEBUG_TIMING**: Env toggle (`DEBUG_TIMING=true`) logs timing + VRAM at key points (model load, CUDA reload/release, per-sentence inference). `app/timing.py`.
 
 ## Docker

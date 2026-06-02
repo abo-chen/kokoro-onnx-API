@@ -11,6 +11,7 @@ from app.auth import verify_api_key
 from app.g2p import contains_chinese, replace_english, _normalize_percent
 from app.models import SpeechRequest
 from app.tn import normalize_text, _VOICE_LANG
+from app.split import split_sentences, get_batch_chars, get_batch_phonemes
 from app.timing import Timer
 
 logger = logging.getLogger(__name__)
@@ -146,25 +147,7 @@ async def create_speech(
 import re
 
 
-def _split_sentences(text: str, max_chars: int = 200) -> list[str]:
-    """Split text into sentences at natural boundaries."""
-    # Split on sentence-ending punctuation followed by a space or end of string
-    parts = re.split(r'(?<=[。！？.!?\n])\s*', text)
-    # Merge short segments to avoid too many tiny chunks
-    chunks = []
-    current = ""
-    for part in parts:
-        part = part.strip()
-        if not part:
-            continue
-        if len(current) + len(part) + 1 > max_chars and current:
-            chunks.append(current)
-            current = part
-        else:
-            current = current + (" " if current else "") + part
-    if current:
-        chunks.append(current)
-    return chunks or [text]
+MAX_PHONEME_LENGTH = 500
 
 
 def _split_clause(text: str) -> list[str]:
@@ -173,19 +156,18 @@ def _split_clause(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
-MAX_PHONEME_LENGTH = 500
-
-
 async def _generate_samples(body: SpeechRequest, mode: str):
     """Generate audio samples based on mode. Returns (samples, sample_rate)."""
     if mode == "zh":
         text = _normalize_percent(replace_english(body.input))
         voice = _resolve_zh_voice(body.voice)
-        sentences = _split_sentences(text)
+        sentences = split_sentences(text)
         all_samples = []
+        batch_phonemes = get_batch_phonemes()
         async with zh_lock:
             _ensure_cuda(zh_kokoro)
             try:
+                accumulated_ph = 0
                 for sentence in sentences:
                     phonemes, _ = await asyncio.to_thread(zh_g2p, sentence)
                     # If phonemes too long, split original text at commas and re-run G2P
@@ -201,21 +183,29 @@ async def _generate_samples(body: SpeechRequest, mode: str):
                         # Final safety: hard split if still too long
                         ph_parts = [ph[i:i+MAX_PHONEME_LENGTH] for i in range(0, len(ph), MAX_PHONEME_LENGTH)]
                         for p in ph_parts:
+                            accumulated_ph += len(p)
                             samples, sample_rate = await asyncio.to_thread(
                                 zh_kokoro.create, p, voice, body.speed, is_phonemes=True
                             )
                             all_samples.append(samples)
+                            # Mid-request VRAM release to bound arena accumulation
+                            if accumulated_ph >= batch_phonemes:
+                                _release_vram(zh_kokoro)
+                                _ensure_cuda(zh_kokoro)
+                                accumulated_ph = 0
             finally:
                 _release_vram(zh_kokoro)
         if all_samples:
             return np.concatenate(all_samples), sample_rate
         return np.array([], dtype=np.float32), 24000
     elif mode == "ja":
-        sentences = _split_sentences(body.input)
+        sentences = split_sentences(body.input)
         all_samples = []
+        batch_phonemes = get_batch_phonemes()
         async with kokoro_lock:
             _ensure_cuda(kokoro)
             try:
+                accumulated_ph = 0
                 for sentence in sentences:
                     phonemes, _ = await asyncio.to_thread(ja_g2p, sentence)
                     if len(phonemes) > MAX_PHONEME_LENGTH:
@@ -229,10 +219,15 @@ async def _generate_samples(body: SpeechRequest, mode: str):
                     for ph in phonemes_list:
                         ph_parts = [ph[i:i+MAX_PHONEME_LENGTH] for i in range(0, len(ph), MAX_PHONEME_LENGTH)]
                         for p in ph_parts:
+                            accumulated_ph += len(p)
                             samples, sample_rate = await asyncio.to_thread(
                                 kokoro.create, p, body.voice, body.speed, is_phonemes=True
                             )
                             all_samples.append(samples)
+                            if accumulated_ph >= batch_phonemes:
+                                _release_vram(kokoro)
+                                _ensure_cuda(kokoro)
+                                accumulated_ph = 0
             finally:
                 _release_vram(kokoro)
         if all_samples:
@@ -241,17 +236,25 @@ async def _generate_samples(body: SpeechRequest, mode: str):
     else:
         tn_lang = _VOICE_LANG.get(body.voice[:2])
         text = normalize_text(body.input, tn_lang)
-        sentences = _split_sentences(text)
+        sentences = split_sentences(text, lang=tn_lang)
         all_samples = []
+        batch_chars = get_batch_chars()
         async with kokoro_lock:
             _ensure_cuda(kokoro)
             try:
+                accumulated_chars = 0
                 for i, sentence in enumerate(sentences):
+                    accumulated_chars += len(sentence)
                     with Timer(f"sentence[{i}] ({len(sentence)} chars)"):
                         samples, sample_rate = await asyncio.to_thread(
                             kokoro.create, sentence, body.voice, body.speed
                         )
                     all_samples.append(samples)
+                    # Mid-request VRAM release to bound arena accumulation
+                    if accumulated_chars >= batch_chars:
+                        _release_vram(kokoro)
+                        _ensure_cuda(kokoro)
+                        accumulated_chars = 0
             finally:
                 _release_vram(kokoro)
         if all_samples:

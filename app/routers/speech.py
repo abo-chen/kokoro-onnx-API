@@ -11,6 +11,7 @@ from app.auth import verify_api_key
 from app.g2p import contains_chinese, replace_english, _normalize_percent
 from app.models import SpeechRequest
 from app.tn import normalize_text, _VOICE_LANG
+from app.split import split_sentences
 from app.timing import Timer
 
 logger = logging.getLogger(__name__)
@@ -146,25 +147,7 @@ async def create_speech(
 import re
 
 
-def _split_sentences(text: str, max_chars: int = 200) -> list[str]:
-    """Split text into sentences at natural boundaries."""
-    # Split on sentence-ending punctuation followed by a space or end of string
-    parts = re.split(r'(?<=[。！？.!?\n])\s*', text)
-    # Merge short segments to avoid too many tiny chunks
-    chunks = []
-    current = ""
-    for part in parts:
-        part = part.strip()
-        if not part:
-            continue
-        if len(current) + len(part) + 1 > max_chars and current:
-            chunks.append(current)
-            current = part
-        else:
-            current = current + (" " if current else "") + part
-    if current:
-        chunks.append(current)
-    return chunks or [text]
+MAX_PHONEME_LENGTH = 500
 
 
 def _split_clause(text: str) -> list[str]:
@@ -173,15 +156,12 @@ def _split_clause(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
-MAX_PHONEME_LENGTH = 500
-
-
 async def _generate_samples(body: SpeechRequest, mode: str):
     """Generate audio samples based on mode. Returns (samples, sample_rate)."""
     if mode == "zh":
         text = _normalize_percent(replace_english(body.input))
         voice = _resolve_zh_voice(body.voice)
-        sentences = _split_sentences(text)
+        sentences = split_sentences(text)
         all_samples = []
         async with zh_lock:
             _ensure_cuda(zh_kokoro)
@@ -211,7 +191,7 @@ async def _generate_samples(body: SpeechRequest, mode: str):
             return np.concatenate(all_samples), sample_rate
         return np.array([], dtype=np.float32), 24000
     elif mode == "ja":
-        sentences = _split_sentences(body.input)
+        sentences = split_sentences(body.input)
         all_samples = []
         async with kokoro_lock:
             _ensure_cuda(kokoro)
@@ -241,7 +221,7 @@ async def _generate_samples(body: SpeechRequest, mode: str):
     else:
         tn_lang = _VOICE_LANG.get(body.voice[:2])
         text = normalize_text(body.input, tn_lang)
-        sentences = _split_sentences(text)
+        sentences = split_sentences(text, lang=tn_lang)
         all_samples = []
         async with kokoro_lock:
             _ensure_cuda(kokoro)

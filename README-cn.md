@@ -8,7 +8,7 @@
 - 50+ 音色，覆盖 9 种语言（英语、普通话、日语、西班牙语、法语、印地语、意大利语、葡萄牙语）
 - 中文模型支持中英文混合输入（技术术语、缩写、英文单词）
 - 日语 TTS 通过 misaki-fork[ja] G2P + unidic 词典实现
-- 长文本自动分句处理（降低显存占用）
+- 长文本智能分句（英语/法语使用 spaCy sentencizer，中日文使用正则）
 - 多种音频格式：MP3、WAV、FLAC、AAC、PCM（PyAV 编码，无 ffmpeg 子进程）
 - 支持流式和非流式响应
 - GPU（CUDA）和 CPU 两种部署模式
@@ -249,7 +249,7 @@ ONNX Runtime 的 CUDA 分配器使用 BFC arena（内存池）模式，分配的
 
 每次 TTS 请求完成后，通过 `session.set_providers(["CPUExecutionProvider"])` 卸载 CUDA execution provider，释放全部 GPU 显存。下次请求前通过 `session.set_providers([cuda_config])` 重新加载。每次请求增加约 0.3–0.5 秒开销，但确保显存零累积。
 
-在单次请求内，文本按句子拆分并顺序处理。arena 在句子间复用内存块，因此峰值显存取决于最大单句，而非全文总长。
+在单次请求内，文本按句子拆分并顺序处理。arena 在句子间复用内存块，因此峰值显存取决于最大单句，而非全文总长。英语和法语文本使用 [spaCy](https://spacy.io/) sentencizer 进行精确的句子边界检测（能正确处理缩写、罗马数字、小数等）。中文和日文使用基于正则的拆分（中日文标点无歧义）。短句会合并至约 400 字符，以获得更好的韵律连贯性。
 
 ### CUDA Provider 选项
 
@@ -279,6 +279,10 @@ ONNX Runtime 的 CUDA 分配器使用 BFC arena（内存池）模式，分配的
 - **平台：** 仅支持 x86_64（AMD64/Intel 64），不支持 ARM 平台（如 Apple Silicon、树莓派等）
 
 ## 更新日志
+
+### spaCy 智能分句
+
+长文本在 TTS 前按句子拆分以控制峰值显存。英语和法语使用 spaCy sentencizer（空白模型 + sentencizer 管道），能正确处理缩写、罗马数字和小数点等场景，远优于简单的正则切分。中文和日文使用基于正则的拆分（中日文标点无歧义）。短句合并至约 400 字符，提升韵律连贯性。启动增加约 1.2 秒（en+fr 初始化）。无需下载预训练模型。
 
 ### 显存释放（set_providers）
 

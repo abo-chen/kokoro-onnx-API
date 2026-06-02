@@ -193,6 +193,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to load text normalizer: {e}")
 
+    # Load sentence splitters (English + French)
+    try:
+        from app.split import init_splitters
+        with Timer("sentence splitter"):
+            init_splitters()
+    except Exception as e:
+        logger.warning(f"Failed to load sentence splitter: {e}")
+
     yield
 
     kokoro_instance = None

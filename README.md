@@ -8,7 +8,7 @@ OpenAI-compatible TTS API powered by [kokoro-onnx](https://github.com/thewh1teag
 - 50+ voices across 9 languages (English, Mandarin, Japanese, Spanish, French, Hindi, Italian, Portuguese)
 - Chinese model with mixed CN/EN support (tech terms, abbreviations, English words)
 - Japanese TTS via misaki-fork[ja] G2P with unidic dictionary
-- Text chunking for long input (sentence-level splitting to reduce VRAM usage)
+- Text chunking for long input (spaCy sentencizer for en/fr, regex for zh/ja)
 - Multiple audio formats: MP3, WAV, FLAC, AAC, PCM (PyAV, no ffmpeg subprocess)
 - Streaming and non-streaming response modes
 - GPU (CUDA) and CPU deployment modes
@@ -249,7 +249,7 @@ ONNX Runtime's CUDA allocator uses a BFC arena (memory pool) that grows monotoni
 
 After each TTS request, the CUDA execution provider is unloaded via `session.set_providers(["CPUExecutionProvider"])`, releasing all GPU memory. Before the next request, it is reloaded via `session.set_providers([cuda_config])`. This adds ~0.3–0.5s overhead per request but ensures clean VRAM state with zero accumulation.
 
-Within a single request, text is split into sentences and processed sequentially. The arena reuses memory blocks between sentences, so peak VRAM is bounded by the largest single sentence rather than the total text length.
+Within a single request, text is split into sentences and processed sequentially. The arena reuses memory blocks between sentences, so peak VRAM is bounded by the largest single sentence rather than the total text length. English and French text uses [spaCy](https://spacy.io/) sentencizer for accurate sentence boundary detection (handles abbreviations, Roman numerals, decimals, etc.). Chinese and Japanese use regex-based splitting (CJK punctuation is unambiguous). Short sentences are merged up to ~400 chars for better prosodic continuity.
 
 ### CUDA Provider Options
 
@@ -279,6 +279,10 @@ Set `DEBUG_TIMING=true` in `.env` to log timing and VRAM usage at key points (mo
 - **Platform:** x86_64 (AMD64/Intel 64). ARM platforms (e.g. Apple Silicon, Raspberry Pi) are not currently supported.
 
 ## Changelog
+
+### Sentence Splitting with spaCy
+
+Long text is split into sentences before TTS to bound peak VRAM. English and French use spaCy sentencizer (blank model + sentencizer pipe) which handles abbreviations, Roman numerals, and decimals correctly — much better than naive regex. Chinese and Japanese use regex-based splitting (CJK punctuation is unambiguous). Short sentences are merged up to ~400 chars for better prosodic continuity. Startup adds ~1.2s for en+fr sentencizer initialization. No pre-trained model download needed.
 
 ### VRAM Release via set_providers
 

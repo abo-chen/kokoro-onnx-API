@@ -298,6 +298,30 @@ GitHub Releases 提供的中文模型（`kokoro-v1.1-zh.onnx`）存在一个 bug
 
 Dockerfile 中同时 patch 了 kokoro-onnx 库（`np.int32` → `np.float32`）作为双保险。
 
+## TODO / 待优化
+
+### 中英混读英文音质：用 misaki BART 替换 espeak
+
+当前中文模型（zh 模式）的英文片段由 `app/g2p.py` 的 `replace_english()` 处理（`CUSTOM_DICT` → `ARPABET_MAP` → `g2p_en` 三级音译），规则化合成，音质偏机械。
+
+> **进行中（未提交、未验证）**：已尝试改为 `ZHG2P(en_callable=...)`，让英文片段走 `app/main.py` 中 `kokoro_instance.tokenizer`（misaki / espeak-ng 规则合成器）——但实测仍偏机械，例如 `GitHub` 会被切分成 `ɡˈɪt hˈʌb` 两段、带多余空格。改动暂存于工作区，验证通过后再提交。
+
+作为对比，Kokoro-FastAPI-zh（PyTorch 版）的英文用 `misaki.en.G2P` + BART 神经网络（`PeterReid/graphemes_to_phonemes`），更自然连贯。
+
+**进一步升级方案**：跳过上述 espeak 路线，直接把 zh 模式的英文 G2P 换成 misaki BART：
+
+```python
+from misaki import zh, en as misaki_en
+_en_g2p = misaki_en.G2P(british=False)  # en-us，CMU Lexicon + BART FallbackNetwork
+zh_g2p = zh.ZHG2P(version="1.1", en_callable=lambda t: _en_g2p(t)[0])
+```
+
+**代价**：需引入 `torch`（CPU 版即可，仅驱动英文 G2P 的小神经网络，不占 GPU、不影响 ONNX 主推理）+ `transformers` + `spacy/en_core_web_sm`，首次从 HuggingFace 下载 BART 模型（几十 MB）。这违背本项目“ONNX 轻量、无 torch”的初衷，Docker 镜像会变大。
+
+**关联**：若追求生产长期稳定 + 多模型（英/法/日 + 优化中文 + 丰富英文声），建议改用 Kokoro-FastAPI-zh 的双模型方案（PyTorch 官方库 `hexgrad/kokoro` 活跃维护，免去本项目的上游补丁负担）。
+
+> 备注：`app/g2p.py` 中的 `replace_english` / `CUSTOM_DICT` / `ARPABET_MAP` 三级音译策略（如 `github→给特哈布`）**目前仍在 `speech.py` 中被 zh 模式调用**（是当前英文处理的实际路径，并非死代码）。若上述 `en_callable` / BART 方案验证通过并合入，即可一并清理 `replace_english`。
+
 ## 许可证
 
 MIT
